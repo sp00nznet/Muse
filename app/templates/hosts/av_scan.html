@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}AV Scan - {{ host.hostname }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <a href="{{ url_for('main.host_detail', host_id=host.id) }}" style="color: var(--gray-600); text-decoration: none;">&larr; Back to {{ host.hostname }}</a>
+</div>
+
+<h1 style="margin-bottom: 1.5rem;">Antivirus Scan: {{ host.hostname }}</h1>
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-header">
+        <h2 class="card-title">Configure AV Scan</h2>
+    </div>
+
+    <form method="POST">
+        <div class="form-group">
+            <label class="form-label">Scan Type</label>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+                    <input type="radio" name="scan_type" value="quick" checked style="margin-top: 0.25rem;">
+                    <div>
+                        <strong>Quick Scan</strong>
+                        <p style="color: var(--gray-600); font-size: 0.875rem; margin: 0;">
+                            Scans common malware locations (/tmp, /home, /var/www for Linux; Users, Temp for Windows)
+                        </p>
+                    </div>
+                </label>
+
+                <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+                    <input type="radio" name="scan_type" value="full" style="margin-top: 0.25rem;">
+                    <div>
+                        <strong>Full Scan</strong>
+                        <p style="color: var(--gray-600); font-size: 0.875rem; margin: 0;">
+                            More comprehensive scan including /opt, /usr/local/bin, Program Files, etc.
+                        </p>
+                    </div>
+                </label>
+
+                <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+                    <input type="radio" name="scan_type" value="custom" style="margin-top: 0.25rem;">
+                    <div>
+                        <strong>Custom Paths</strong>
+                        <p style="color: var(--gray-600); font-size: 0.875rem; margin: 0;">
+                            Specify custom directories to scan
+                        </p>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group" id="custom-paths-group" style="display: none;">
+            <label class="form-label" for="custom_paths">Custom Paths (one per line)</label>
+            <textarea name="custom_paths" class="form-control" rows="5" placeholder="/path/to/scan
+/another/path"></textarea>
+            <small style="color: var(--gray-600);">
+                {% if host.os_type == 'linux' %}
+                    Example: /var/www, /home/user, /opt/app
+                {% else %}
+                    Example: C:\Users, D:\Data, C:\inetpub
+                {% endif %}
+            </small>
+        </div>
+
+        <div class="alert alert-info" style="margin-top: 1rem;">
+            <strong>Note:</strong> AV scanning fetches files from the remote host and scans them with ClamAV.
+            This process may take several minutes depending on the number of files and network speed.
+            Files larger than 10MB are skipped.
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-primary">Start AV Scan</button>
+            <a href="{{ url_for('main.host_detail', host_id=host.id) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.querySelectorAll('input[name="scan_type"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const customGroup = document.getElementById('custom-paths-group');
+        if (this.value === 'custom') {
+            customGroup.style.display = 'block';
+        } else {
+            customGroup.style.display = 'none';
+        }
+    });
+});
+</script>
+{% endblock %}

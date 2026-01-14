@@ -1,8 +1,9 @@
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 from app import db
-from app.models import Host, ScanResult
+from app.models import Host, ScanResult, AVScanResult
 from app.scanner import RemoteScanner
+from app.av_scanner import ClamAVScanner
 
 api_bp = Blueprint('api', __name__)
 
@@ -92,6 +93,7 @@ def delete_host(host_id):
         return jsonify({'error': 'Host not found'}), 404
 
     ScanResult.query.filter_by(host_id=host.id).delete()
+    AVScanResult.query.filter_by(host_id=host.id).delete()
     db.session.delete(host)
     db.session.commit()
 
@@ -159,3 +161,53 @@ def dashboard_stats():
         'error_hosts': sum(1 for h in hosts if h.status == 'error'),
         'pending_hosts': sum(1 for h in hosts if h.status == 'pending')
     })
+
+
+@api_bp.route('/hosts/<int:host_id>/av-scan', methods=['POST'])
+@login_required
+def av_scan_host(host_id):
+    """Trigger an antivirus scan for a host."""
+    host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+    if not host:
+        return jsonify({'error': 'Host not found'}), 404
+
+    data = request.get_json() or {}
+    scan_type = data.get('scan_type', 'quick')
+    paths = data.get('paths')
+    password = data.get('password')
+
+    scanner = ClamAVScanner(host, password)
+    result = scanner.scan(paths=paths, scan_type=scan_type)
+
+    return jsonify(result.to_dict())
+
+
+@api_bp.route('/hosts/<int:host_id>/av-scans', methods=['GET'])
+@login_required
+def list_av_scans(host_id):
+    """List AV scan history for a host."""
+    host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+    if not host:
+        return jsonify({'error': 'Host not found'}), 404
+
+    limit = request.args.get('limit', 20, type=int)
+    scans = AVScanResult.query.filter_by(host_id=host.id).order_by(
+        AVScanResult.created_at.desc()
+    ).limit(limit).all()
+
+    return jsonify([s.to_dict() for s in scans])
+
+
+@api_bp.route('/hosts/<int:host_id>/av-scans/<int:scan_id>', methods=['GET'])
+@login_required
+def get_av_scan(host_id, scan_id):
+    """Get a specific AV scan result."""
+    host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+    if not host:
+        return jsonify({'error': 'Host not found'}), 404
+
+    scan = AVScanResult.query.filter_by(id=scan_id, host_id=host.id).first()
+    if not scan:
+        return jsonify({'error': 'AV scan not found'}), 404
+
+    return jsonify(scan.to_dict())

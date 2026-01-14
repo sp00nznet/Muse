@@ -9,8 +9,9 @@
     </div>
     <div class="actions">
         <form action="{{ url_for('main.scan_host', host_id=host.id) }}" method="POST" style="display: inline;">
-            <button type="submit" class="btn btn-success">Run Scan</button>
+            <button type="submit" class="btn btn-success">Health Scan</button>
         </form>
+        <a href="{{ url_for('main.av_scan_host', host_id=host.id) }}" class="btn btn-primary">AV Scan</a>
         <a href="{{ url_for('main.edit_host', host_id=host.id) }}" class="btn btn-secondary">Edit</a>
         <form action="{{ url_for('main.delete_host', host_id=host.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this host?');">
             <button type="submit" class="btn btn-danger">Delete</button>
@@ -150,6 +151,92 @@
         {% endif %}
     </div>
 
+    <!-- Event Analysis Section -->
+    {% if latest_scan.event_summary %}
+    <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-200);">
+        <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">📊 Event Analysis</h3>
+
+        {% if latest_scan.event_summary %}
+        <div class="metric-card" style="background: var(--gray-50); margin-bottom: 1rem;">
+            <div class="metric-title">Event Summary</div>
+            <pre style="margin-top: 0.5rem; background: transparent; padding: 0; font-size: 0.9rem;">{{ latest_scan.event_summary }}</pre>
+        </div>
+        {% endif %}
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+            {% if latest_scan.security_events and latest_scan.security_events != 'No security events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    🔐 Security Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(24h)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.security_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.system_events and latest_scan.system_events != 'No system events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    ⚙️ System Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(7d)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.system_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.application_events and latest_scan.application_events != 'No application events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    📱 Application Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(24h)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.application_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.hardware_events and latest_scan.hardware_events != 'No hardware events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    🔧 Hardware Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(7d)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.hardware_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.critical_errors and latest_scan.critical_errors != 'No critical errors found' %}
+            <details style="background: #fef2f2; border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: #991b1b;">
+                    🚨 Critical Errors
+                    <span style="font-weight: normal; color: #991b1b; font-size: 0.875rem;">(7d)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.critical_errors }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.recent_changes and latest_scan.recent_changes != 'No recent changes found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    📦 Recent Changes
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(installs/updates)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.recent_changes }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.cbs_logs and latest_scan.cbs_logs != 'CBS logs not available' and latest_scan.cbs_logs != 'CBS log not accessible' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    🪟 CBS Logs
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(Windows)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.cbs_logs }}</pre>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     {% else %}
     <div class="alert alert-error">
         <strong>Scan Failed:</strong> {{ latest_scan.error_message }}
@@ -171,7 +258,7 @@
 {% if scan_history and scan_history|length > 1 %}
 <div class="card">
     <div class="card-header">
-        <h2 class="card-title">Scan History</h2>
+        <h2 class="card-title">Health Scan History</h2>
     </div>
     <table class="table">
         <thead>
@@ -203,4 +290,103 @@
     </table>
 </div>
 {% endif %}
+
+<!-- AV Scan Section -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Antivirus Scanning</h2>
+        <a href="{{ url_for('main.av_scan_host', host_id=host.id) }}" class="btn btn-primary btn-sm">Run AV Scan</a>
+    </div>
+
+    {% if latest_av_scan %}
+    <div style="margin-bottom: 1rem;">
+        <h3 style="font-size: 1rem; color: var(--gray-700); margin-bottom: 0.75rem;">Latest AV Scan</h3>
+        <div class="metric-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="metric-card">
+                <div class="metric-title">Status</div>
+                {% if latest_av_scan.success %}
+                    {% if latest_av_scan.threats_found > 0 %}
+                        <span class="badge badge-error">Threats Found</span>
+                    {% else %}
+                        <span class="badge badge-online">Clean</span>
+                    {% endif %}
+                {% else %}
+                    <span class="badge badge-error">Failed</span>
+                {% endif %}
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Scan Type</div>
+                <div style="text-transform: capitalize;">{{ latest_av_scan.scan_type }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Files Scanned</div>
+                <div class="metric-value" style="font-size: 1.25rem;">{{ latest_av_scan.files_scanned or 0 }}</div>
+            </div>
+            <div class="metric-card {% if latest_av_scan.threats_found > 0 %}error{% endif %}">
+                <div class="metric-title">Threats</div>
+                <div class="metric-value" style="font-size: 1.25rem;">{{ latest_av_scan.threats_found or 0 }}</div>
+            </div>
+        </div>
+
+        {% if latest_av_scan.threats_found > 0 %}
+        <div class="alert alert-error" style="margin-top: 1rem;">
+            <strong>Warning:</strong> Threats detected!
+            <a href="{{ url_for('main.av_scan_detail', host_id=host.id, scan_id=latest_av_scan.id) }}" style="color: inherit; text-decoration: underline;">View details</a>
+        </div>
+        {% endif %}
+
+        <p style="margin-top: 0.75rem; color: var(--gray-600); font-size: 0.875rem;">
+            Scanned {{ latest_av_scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+            <a href="{{ url_for('main.av_scan_detail', host_id=host.id, scan_id=latest_av_scan.id) }}" style="margin-left: 1rem;">View full report</a>
+        </p>
+    </div>
+
+    {% if av_scan_history and av_scan_history|length > 1 %}
+    <h3 style="font-size: 1rem; color: var(--gray-700); margin: 1rem 0 0.75rem;">AV Scan History</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Files</th>
+                <th>Threats</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for av_scan in av_scan_history %}
+            <tr>
+                <td>{{ av_scan.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td style="text-transform: capitalize;">{{ av_scan.scan_type }}</td>
+                <td>
+                    {% if av_scan.success %}
+                        {% if av_scan.threats_found > 0 %}
+                            <span class="badge badge-error">Threats</span>
+                        {% else %}
+                            <span class="badge badge-online">Clean</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge badge-error">Failed</span>
+                    {% endif %}
+                </td>
+                <td>{{ av_scan.files_scanned or 0 }}</td>
+                <td>{{ av_scan.threats_found or 0 }}</td>
+                <td>
+                    <a href="{{ url_for('main.av_scan_detail', host_id=host.id, scan_id=av_scan.id) }}" class="btn btn-secondary btn-sm">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% else %}
+    <div class="empty-state" style="padding: 2rem;">
+        <h3>No AV scans yet</h3>
+        <p>Run an antivirus scan to check for malware on this host.</p>
+        <a href="{{ url_for('main.av_scan_host', host_id=host.id) }}" class="btn btn-primary" style="margin-top: 1rem;">Run First AV Scan</a>
+    </div>
+    {% endif %}
+</div>
 {% endblock %}
