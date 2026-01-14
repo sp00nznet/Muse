@@ -1723,6 +1723,226 @@ Content-Type: application/json
 
 ---
 
+## 🐕 Datadog Integration - Admin Endpoints (Admin Only)
+
+Manage Datadog integrations for pulling host information.
+
+### List Datadog Integrations
+
+```http
+GET /api/admin/datadog/integrations
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Production",
+    "description": "Production Datadog account",
+    "site": "datadoghq.com",
+    "is_active": true,
+    "sync_interval_minutes": 15,
+    "last_sync": "2024-01-15T12:00:00",
+    "last_sync_status": "success",
+    "last_sync_host_count": 150,
+    "has_api_key": true,
+    "has_app_key": true
+  }
+]
+```
+
+---
+
+### Create Datadog Integration
+
+```http
+POST /api/admin/datadog/integrations
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "name": "Production",
+  "description": "Production Datadog account",
+  "api_key": "your-datadog-api-key",
+  "app_key": "your-datadog-app-key",
+  "site": "datadoghq.com",
+  "sync_interval_minutes": 15,
+  "filter_query": "env:production",
+  "show_metrics": true,
+  "show_tags": true,
+  "show_integrations": true
+}
+```
+
+**Supported Sites:**
+- `datadoghq.com` (US1 - default)
+- `datadoghq.eu` (EU)
+- `us3.datadoghq.com` (US3)
+- `us5.datadoghq.com` (US5)
+- `ap1.datadoghq.com` (AP1)
+- `ddog-gov.com` (US1-FED)
+
+**Response:** `201 Created`
+
+---
+
+### Update Datadog Integration
+
+```http
+PUT /api/admin/datadog/integrations/{id}
+Content-Type: application/json
+```
+
+---
+
+### Delete Datadog Integration
+
+```http
+DELETE /api/admin/datadog/integrations/{id}
+```
+
+---
+
+### Test Datadog Connection
+
+```http
+POST /api/admin/datadog/integrations/{id}/test
+```
+
+**Response:**
+```json
+{
+  "integration_id": 1,
+  "integration_name": "Production",
+  "test_time": "2024-01-15T12:00:00",
+  "success": true,
+  "message": "API connection successful",
+  "valid": true
+}
+```
+
+---
+
+### Sync Datadog Hosts
+
+```http
+POST /api/admin/datadog/integrations/{id}/sync
+```
+
+**Response:**
+```json
+{
+  "integration_id": 1,
+  "integration_name": "Production",
+  "success": true,
+  "hosts_synced": 150,
+  "hosts_added": 5,
+  "hosts_updated": 145,
+  "hosts_removed": 2
+}
+```
+
+---
+
+## 🐕 Datadog Integration - User Endpoints
+
+View Datadog host information (available to all authenticated users).
+
+### List Datadog Hosts
+
+```http
+GET /api/datadog/hosts
+```
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `integration_id` | int | Filter by integration |
+| `search` | string | Search by host name |
+| `up` | bool | Filter by status (true/false) |
+| `cloud_provider` | string | Filter by cloud (aws, azure, gcp) |
+| `tag` | string | Filter by tag (can repeat) |
+| `page` | int | Page number (default 1) |
+| `per_page` | int | Items per page (default 50, max 200) |
+
+**Response:**
+```json
+{
+  "hosts": [
+    {
+      "id": 1,
+      "host_name": "web-server-01",
+      "up": true,
+      "os_name": "Ubuntu",
+      "cloud_provider": "aws",
+      "cloud_instance_type": "t3.medium",
+      "tags": ["env:production", "service:web"],
+      "agent_version": "7.50.0"
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "per_page": 50
+}
+```
+
+---
+
+### Get Datadog Host Details
+
+```http
+GET /api/datadog/hosts/{id}
+```
+
+---
+
+### Link Datadog Host to Muse Host
+
+```http
+POST /api/datadog/hosts/{id}/link
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "muse_host_id": 5
+}
+```
+
+---
+
+### Get Datadog Summary
+
+```http
+GET /api/datadog/summary
+```
+
+**Response:**
+```json
+{
+  "total_hosts": 150,
+  "hosts_up": 145,
+  "hosts_down": 5,
+  "cloud_providers": {"aws": 100, "azure": 30, "gcp": 20},
+  "platforms": {"linux": 120, "windows": 30},
+  "integrations": [...]
+}
+```
+
+---
+
+### Search Datadog Hosts
+
+```http
+GET /api/datadog/hosts/search?q=web&os=linux
+```
+
+---
+
 ## ❌ Error Responses
 
 All endpoints return errors in this format:

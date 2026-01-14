@@ -32,6 +32,7 @@
 | 🔐 **User Authentication** | Secure login with session management |
 | 🏢 **Domain Integration** | Connect to Active Directory for user authentication |
 | 🔑 **Service Accounts** | Centralized credential management for host connections |
+| 🐕 **Datadog Integration** | Pull and display host information from Datadog |
 | 📊 **Dashboard** | Real-time overview of all monitored hosts |
 | 🔌 **REST API** | Full API for automation and integration |
 | 🐳 **Containerized** | Docker Compose for easy deployment |
@@ -218,6 +219,42 @@ Connect Muse to your Active Directory for user authentication:
 | `GET/PUT /api/admin/auth-settings` | Configure authentication |
 | `PUT /api/admin/hosts/{id}/service-account` | Assign service account to host |
 | `POST /api/admin/hosts/bulk-assign-service-account` | Bulk assign to multiple hosts |
+| `GET/POST /api/admin/datadog/integrations` | Manage Datadog integrations |
+| `POST /api/admin/datadog/integrations/{id}/sync` | Sync hosts from Datadog |
+
+---
+
+## 🐕 Datadog Integration
+
+Muse can pull host information from your Datadog account and display it alongside your directly-managed hosts.
+
+### Features
+
+- **Multi-account support** - Connect multiple Datadog accounts
+- **Automatic sync** - Configurable sync intervals (default 15 min)
+- **Host filtering** - Use Datadog query syntax to filter hosts
+- **Cloud provider detection** - AWS, Azure, GCP metadata extraction
+- **Link to Muse hosts** - Associate Datadog hosts with Muse-managed hosts
+
+### Supported Datadog Sites
+
+| Site | Region |
+|------|--------|
+| `datadoghq.com` | US1 (default) |
+| `datadoghq.eu` | EU |
+| `us3.datadoghq.com` | US3 |
+| `us5.datadoghq.com` | US5 |
+| `ap1.datadoghq.com` | AP1 |
+| `ddog-gov.com` | US1-FED |
+
+### User Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/datadog/hosts` | List Datadog hosts with filtering |
+| `GET /api/datadog/hosts/{id}` | Get host details |
+| `GET /api/datadog/summary` | Get summary statistics |
+| `POST /api/datadog/hosts/{id}/link` | Link to Muse host |
 
 ---
 

@@ -790,3 +790,222 @@ def bulk_assign_service_account():
         'failed': sum(1 for r in results if not r['success']),
         'results': results
     })
+
+
+# =============================================================================
+# DATADOG INTEGRATION ENDPOINTS
+# =============================================================================
+
+@admin_api_bp.route('/datadog/integrations', methods=['GET'])
+@login_required
+@admin_required
+def list_datadog_integrations():
+    """List all Datadog integrations."""
+    from app.models import DatadogIntegration
+    integrations = DatadogIntegration.query.order_by(DatadogIntegration.name).all()
+    return jsonify([i.to_dict() for i in integrations])
+
+
+@admin_api_bp.route('/datadog/integrations', methods=['POST'])
+@login_required
+@admin_required
+def create_datadog_integration():
+    """Create a new Datadog integration."""
+    from app.models import DatadogIntegration
+
+    data = request.get_json()
+
+    # Validate required fields
+    required = ['name', 'api_key', 'app_key']
+    for field in required:
+        if not data.get(field):
+            return jsonify({'error': f'{field} is required'}), 400
+
+    # Check for duplicate name
+    existing = DatadogIntegration.query.filter_by(name=data['name']).first()
+    if existing:
+        return jsonify({'error': 'A Datadog integration with this name already exists'}), 400
+
+    # Validate site
+    valid_sites = [
+        'datadoghq.com',
+        'datadoghq.eu',
+        'us3.datadoghq.com',
+        'us5.datadoghq.com',
+        'ap1.datadoghq.com',
+        'ddog-gov.com'
+    ]
+    site = data.get('site', 'datadoghq.com')
+    if site not in valid_sites:
+        return jsonify({'error': f'Invalid site. Must be one of: {", ".join(valid_sites)}'}), 400
+
+    # Create integration
+    integration = DatadogIntegration(
+        name=data['name'],
+        description=data.get('description'),
+        api_key_encrypted=encrypt_value(data['api_key']),
+        app_key_encrypted=encrypt_value(data['app_key']),
+        site=site,
+        is_active=data.get('is_active', True),
+        sync_interval_minutes=data.get('sync_interval_minutes', 15),
+        filter_tags=data.get('filter_tags'),
+        filter_query=data.get('filter_query'),
+        show_metrics=data.get('show_metrics', True),
+        show_tags=data.get('show_tags', True),
+        show_integrations=data.get('show_integrations', True),
+        created_by=current_user.id
+    )
+
+    db.session.add(integration)
+    db.session.commit()
+
+    return jsonify(integration.to_dict()), 201
+
+
+@admin_api_bp.route('/datadog/integrations/<int:integration_id>', methods=['GET'])
+@login_required
+@admin_required
+def get_datadog_integration(integration_id):
+    """Get a specific Datadog integration."""
+    from app.models import DatadogIntegration
+
+    integration = DatadogIntegration.query.get(integration_id)
+    if not integration:
+        return jsonify({'error': 'Datadog integration not found'}), 404
+
+    return jsonify(integration.to_dict())
+
+
+@admin_api_bp.route('/datadog/integrations/<int:integration_id>', methods=['PUT'])
+@login_required
+@admin_required
+def update_datadog_integration(integration_id):
+    """Update a Datadog integration."""
+    from app.models import DatadogIntegration
+
+    integration = DatadogIntegration.query.get(integration_id)
+    if not integration:
+        return jsonify({'error': 'Datadog integration not found'}), 404
+
+    data = request.get_json()
+
+    # Update fields
+    if 'name' in data:
+        existing = DatadogIntegration.query.filter(
+            DatadogIntegration.name == data['name'],
+            DatadogIntegration.id != integration_id
+        ).first()
+        if existing:
+            return jsonify({'error': 'A Datadog integration with this name already exists'}), 400
+        integration.name = data['name']
+
+    if 'description' in data:
+        integration.description = data['description']
+
+    if 'api_key' in data and data['api_key']:
+        integration.api_key_encrypted = encrypt_value(data['api_key'])
+
+    if 'app_key' in data and data['app_key']:
+        integration.app_key_encrypted = encrypt_value(data['app_key'])
+
+    if 'site' in data:
+        integration.site = data['site']
+
+    if 'is_active' in data:
+        integration.is_active = data['is_active']
+
+    if 'sync_interval_minutes' in data:
+        integration.sync_interval_minutes = data['sync_interval_minutes']
+
+    if 'filter_tags' in data:
+        integration.filter_tags = data['filter_tags']
+
+    if 'filter_query' in data:
+        integration.filter_query = data['filter_query']
+
+    if 'show_metrics' in data:
+        integration.show_metrics = data['show_metrics']
+
+    if 'show_tags' in data:
+        integration.show_tags = data['show_tags']
+
+    if 'show_integrations' in data:
+        integration.show_integrations = data['show_integrations']
+
+    db.session.commit()
+
+    return jsonify(integration.to_dict())
+
+
+@admin_api_bp.route('/datadog/integrations/<int:integration_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def delete_datadog_integration(integration_id):
+    """Delete a Datadog integration."""
+    from app.models import DatadogIntegration, DatadogHostCache
+
+    integration = DatadogIntegration.query.get(integration_id)
+    if not integration:
+        return jsonify({'error': 'Datadog integration not found'}), 404
+
+    # Delete cached hosts first
+    DatadogHostCache.query.filter_by(integration_id=integration_id).delete()
+
+    db.session.delete(integration)
+    db.session.commit()
+
+    return jsonify({'message': 'Datadog integration deleted successfully'})
+
+
+@admin_api_bp.route('/datadog/integrations/<int:integration_id>/test', methods=['POST'])
+@login_required
+@admin_required
+def test_datadog_integration(integration_id):
+    """Test connection to Datadog."""
+    from app.models import DatadogIntegration
+    from app.datadog_service import DatadogClient
+
+    integration = DatadogIntegration.query.get(integration_id)
+    if not integration:
+        return jsonify({'error': 'Datadog integration not found'}), 404
+
+    client = DatadogClient(integration)
+    result = client.test_connection()
+
+    result['integration_id'] = integration_id
+    result['integration_name'] = integration.name
+    result['test_time'] = datetime.utcnow().isoformat()
+
+    return jsonify(result)
+
+
+@admin_api_bp.route('/datadog/integrations/<int:integration_id>/sync', methods=['POST'])
+@login_required
+@admin_required
+def sync_datadog_integration(integration_id):
+    """Trigger a sync for a Datadog integration."""
+    from app.models import DatadogIntegration
+    from app.datadog_service import datadog_sync_service
+
+    integration = DatadogIntegration.query.get(integration_id)
+    if not integration:
+        return jsonify({'error': 'Datadog integration not found'}), 404
+
+    result = datadog_sync_service.sync_integration(integration)
+
+    return jsonify(result)
+
+
+@admin_api_bp.route('/datadog/sync-all', methods=['POST'])
+@login_required
+@admin_required
+def sync_all_datadog_integrations():
+    """Trigger a sync for all active Datadog integrations."""
+    from app.datadog_service import datadog_sync_service
+
+    results = datadog_sync_service.sync_all_active()
+
+    return jsonify({
+        'synced_count': len(results),
+        'results': results
+    })
