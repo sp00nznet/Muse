@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 1.5rem;">Dashboard</h1>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_hosts }}</div>
+        <div class="stat-label">Total Hosts</div>
+    </div>
+    <div class="stat-card online">
+        <div class="stat-value">{{ online_hosts }}</div>
+        <div class="stat-label">Online</div>
+    </div>
+    <div class="stat-card offline">
+        <div class="stat-value">{{ offline_hosts }}</div>
+        <div class="stat-label">Offline</div>
+    </div>
+    <div class="stat-card error">
+        <div class="stat-value">{{ error_hosts }}</div>
+        <div class="stat-label">Error</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Monitored Hosts</h2>
+        <a href="{{ url_for('main.add_host') }}" class="btn btn-primary">+ Add Host</a>
+    </div>
+
+    {% if hosts %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>IP Address</th>
+                <th>OS Type</th>
+                <th>Status</th>
+                <th>Last Scan</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for host in hosts %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('main.host_detail', host_id=host.id) }}" style="color: var(--primary); text-decoration: none; font-weight: 500;">
+                        {{ host.hostname }}
+                    </a>
+                </td>
+                <td>{{ host.ip_address or '-' }}</td>
+                <td>
+                    <span class="badge badge-{{ host.os_type }}">{{ host.os_type }}</span>
+                </td>
+                <td>
+                    <span class="badge badge-{{ host.status }}">{{ host.status }}</span>
+                </td>
+                <td>
+                    {% if host.last_scan %}
+                        {{ host.last_scan.strftime('%Y-%m-%d %H:%M') }}
+                    {% else %}
+                        Never
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="actions">
+                        <form action="{{ url_for('main.scan_host', host_id=host.id) }}" method="POST" style="display: inline;">
+                            <button type="submit" class="btn btn-success btn-sm">Scan</button>
+                        </form>
+                        <a href="{{ url_for('main.host_detail', host_id=host.id) }}" class="btn btn-secondary btn-sm">View</a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <h3>No hosts yet</h3>
+        <p>Add your first host to start monitoring.</p>
+        <a href="{{ url_for('main.add_host') }}" class="btn btn-primary" style="margin-top: 1rem;">+ Add Host</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
