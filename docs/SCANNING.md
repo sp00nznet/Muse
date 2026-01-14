@@ -78,6 +78,94 @@ Memory: 4.2 GB / 8.0 GB (52.5%)
 
 ---
 
+## 📊 Event Analysis
+
+Health scans include comprehensive event log analysis to detect recent system activity and potential issues.
+
+### Event Categories
+
+| Category | Linux Source | Windows Source | Time Range |
+|----------|--------------|----------------|------------|
+| 🔐 Security Events | `journalctl`, `/var/log/auth.log` | Security Event Log (4625, 4624, etc.) | 24 hours |
+| ⚙️ System Events | `journalctl` (systemd) | System Event Log (6005, 6008, 7036, etc.) | 7 days |
+| 📱 Application Events | `journalctl -p err` | Application Event Log | 24 hours |
+| 🔧 Hardware Events | `dmesg` | Disk, WHEA, StorPort logs | 7 days |
+| 🚨 Critical Errors | `journalctl -p crit..emerg` | System Log (Level 1-2) | 7 days |
+| 📦 Recent Changes | dpkg/yum/dnf logs | Windows Update, MsiInstaller | 7 days |
+| 🪟 CBS Logs | N/A | `%windir%\Logs\CBS\CBS.log` | Recent |
+
+### Linux Event Analysis
+
+#### Security Events Detected
+- Failed SSH login attempts
+- Successful logins (accepted)
+- Session open/close events
+- `sudo` command usage
+- `su` authentication
+- PAM authentication failures
+
+#### System Events Detected
+- Service starts/stops
+- System reboots
+- Shutdown events
+- Systemd target changes
+
+#### Summary Metrics
+```
+Critical events (24h): 0
+Error events (24h): 5
+Failed auth attempts (24h): 12
+Reboots recorded: 2
+⚠️ OOM Killer invocations: 1
+⚠️ High disk usage: /var: 85%
+```
+
+### Windows Event Analysis
+
+#### Security Events (Event IDs)
+| Event ID | Description |
+|----------|-------------|
+| 4625 | Failed Login |
+| 4624 | Successful Login |
+| 4634 | Logoff |
+| 4648 | Explicit Credential Use |
+| 4672 | Admin Login |
+| 4768 | Kerberos TGT Request |
+| 4769 | Kerberos Service Ticket |
+| 4771 | Kerberos Pre-Auth Failed |
+
+#### System Events (Event IDs)
+| Event ID | Description |
+|----------|-------------|
+| 6005 | Event Log Started (boot) |
+| 6006 | Event Log Stopped (shutdown) |
+| 6008 | Unexpected Shutdown |
+| 6009 | OS Version at Boot |
+| 7034 | Service Crashed |
+| 7036 | Service State Change |
+| 7040 | Service Start Type Change |
+| 1074 | Shutdown Initiated |
+| 41 | Kernel Power Error |
+
+#### CBS Log Analysis
+Windows Component-Based Servicing logs are analyzed for:
+- Update installation errors
+- Component store corruption
+- HRESULT error codes
+- Failed Windows Update operations
+
+#### Summary Metrics
+```
+Critical events (24h): 0
+Error events (24h): 3
+Failed login attempts (24h): 5
+Unexpected shutdowns (7d): 1
+⚠️ Low disk space on C:: 15.2% free
+⚠️ Blue screen events (30d): 2
+```
+
+---
+
 ## 🦠 Antivirus Scanning
 
 AV scanning fetches files from remote hosts and scans them with ClamAV.

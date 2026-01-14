@@ -151,6 +151,92 @@
         {% endif %}
     </div>
 
+    <!-- Event Analysis Section -->
+    {% if latest_scan.event_summary %}
+    <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-200);">
+        <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">📊 Event Analysis</h3>
+
+        {% if latest_scan.event_summary %}
+        <div class="metric-card" style="background: var(--gray-50); margin-bottom: 1rem;">
+            <div class="metric-title">Event Summary</div>
+            <pre style="margin-top: 0.5rem; background: transparent; padding: 0; font-size: 0.9rem;">{{ latest_scan.event_summary }}</pre>
+        </div>
+        {% endif %}
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+            {% if latest_scan.security_events and latest_scan.security_events != 'No security events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    🔐 Security Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(24h)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.security_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.system_events and latest_scan.system_events != 'No system events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    ⚙️ System Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(7d)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.system_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.application_events and latest_scan.application_events != 'No application events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    📱 Application Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(24h)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.application_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.hardware_events and latest_scan.hardware_events != 'No hardware events found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    🔧 Hardware Events
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(7d)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.hardware_events }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.critical_errors and latest_scan.critical_errors != 'No critical errors found' %}
+            <details style="background: #fef2f2; border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: #991b1b;">
+                    🚨 Critical Errors
+                    <span style="font-weight: normal; color: #991b1b; font-size: 0.875rem;">(7d)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.critical_errors }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.recent_changes and latest_scan.recent_changes != 'No recent changes found' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    📦 Recent Changes
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(installs/updates)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.recent_changes }}</pre>
+            </details>
+            {% endif %}
+
+            {% if latest_scan.cbs_logs and latest_scan.cbs_logs != 'CBS logs not available' and latest_scan.cbs_logs != 'CBS log not accessible' %}
+            <details style="background: var(--gray-50); border-radius: 8px; padding: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; color: var(--gray-700);">
+                    🪟 CBS Logs
+                    <span style="font-weight: normal; color: var(--gray-500); font-size: 0.875rem;">(Windows)</span>
+                </summary>
+                <pre style="margin-top: 0.75rem; font-size: 0.8rem; max-height: 250px;">{{ latest_scan.cbs_logs }}</pre>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     {% else %}
     <div class="alert alert-error">
         <strong>Scan Failed:</strong> {{ latest_scan.error_message }}

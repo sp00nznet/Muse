@@ -92,6 +92,16 @@ class ScanResult(db.Model):
     # Logs & Events
     recent_logs = db.Column(db.Text, nullable=True)
 
+    # Detailed Log Analysis
+    security_events = db.Column(db.Text, nullable=True)      # Failed logins, auth events
+    system_events = db.Column(db.Text, nullable=True)        # Service changes, shutdowns
+    application_events = db.Column(db.Text, nullable=True)   # App crashes, errors
+    hardware_events = db.Column(db.Text, nullable=True)      # Disk errors, hardware issues
+    critical_errors = db.Column(db.Text, nullable=True)      # Critical/Error level events
+    cbs_logs = db.Column(db.Text, nullable=True)             # Windows CBS logs
+    recent_changes = db.Column(db.Text, nullable=True)       # Recent system changes
+    event_summary = db.Column(db.Text, nullable=True)        # Summary of notable events
+
     # Network
     network_info = db.Column(db.Text, nullable=True)
 
@@ -114,6 +124,14 @@ class ScanResult(db.Model):
             'running_processes': self.running_processes,
             'process_count': self.process_count,
             'recent_logs': self.recent_logs,
+            'security_events': self.security_events,
+            'system_events': self.system_events,
+            'application_events': self.application_events,
+            'hardware_events': self.hardware_events,
+            'critical_errors': self.critical_errors,
+            'cbs_logs': self.cbs_logs,
+            'recent_changes': self.recent_changes,
+            'event_summary': self.event_summary,
             'network_info': self.network_info
         }
 

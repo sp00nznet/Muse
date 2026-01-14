@@ -97,11 +97,77 @@ class RemoteScanner:
             except (ValueError, AttributeError):
                 pass
 
-            # Recent logs
+            # Recent logs (general)
             self.result.recent_logs = self._ssh_exec(
                 ssh,
                 'journalctl -n 50 --no-pager 2>/dev/null || tail -50 /var/log/syslog 2>/dev/null || tail -50 /var/log/messages 2>/dev/null || echo "No logs available"'
             )
+
+            # Security Events - Failed logins, auth failures, sudo usage
+            self.result.security_events = self._ssh_exec(
+                ssh,
+                'journalctl --since "24 hours ago" -n 100 --no-pager 2>/dev/null | grep -iE "(failed|invalid user|accepted|session opened|session closed|sudo:|su:|pam_unix.*authentication)" | tail -50 || grep -iE "(failed|invalid|accepted|sudo)" /var/log/auth.log 2>/dev/null | tail -50 || echo "No security events found"'
+            )
+
+            # System Events - Service changes, reboots, shutdowns
+            self.result.system_events = self._ssh_exec(
+                ssh,
+                'journalctl --since "7 days ago" --no-pager 2>/dev/null | grep -iE "(Started|Stopped|Reloaded|systemd\\[1\\]:|reboot|shutdown|Reached target)" | tail -50 || echo "No system events found"'
+            )
+
+            # Application Events - App crashes, errors from apps
+            self.result.application_events = self._ssh_exec(
+                ssh,
+                'journalctl -p err --since "24 hours ago" -n 50 --no-pager 2>/dev/null || tail -50 /var/log/kern.log 2>/dev/null || echo "No application events found"'
+            )
+
+            # Hardware Events - Disk errors, hardware issues
+            self.result.hardware_events = self._ssh_exec(
+                ssh,
+                'dmesg 2>/dev/null | grep -iE "(error|fail|warn|I/O|sector|disk|sda|sdb|nvme|hardware|temperature)" | tail -30 || echo "No hardware events found"'
+            )
+
+            # Critical Errors - High priority events
+            self.result.critical_errors = self._ssh_exec(
+                ssh,
+                'journalctl -p crit..emerg --since "7 days ago" -n 50 --no-pager 2>/dev/null || echo "No critical errors found"'
+            )
+
+            # Recent Changes - Package installs, config changes
+            self.result.recent_changes = self._ssh_exec(
+                ssh,
+                'tail -50 /var/log/dpkg.log 2>/dev/null || tail -50 /var/log/yum.log 2>/dev/null || tail -50 /var/log/dnf.rpm.log 2>/dev/null || journalctl --since "7 days ago" --no-pager 2>/dev/null | grep -iE "(installed|upgraded|removed|apt|yum|dnf)" | tail -30 || echo "No recent changes found"'
+            )
+
+            # Event Summary - Build a summary of notable events
+            summary_parts = []
+            crit_count = self._ssh_exec(ssh, 'journalctl -p crit --since "24 hours ago" --no-pager 2>/dev/null | wc -l || echo 0').strip()
+            err_count = self._ssh_exec(ssh, 'journalctl -p err --since "24 hours ago" --no-pager 2>/dev/null | wc -l || echo 0').strip()
+            failed_logins = self._ssh_exec(ssh, 'journalctl --since "24 hours ago" --no-pager 2>/dev/null | grep -ci "failed" 2>/dev/null || echo 0').strip()
+            reboot_count = self._ssh_exec(ssh, 'last reboot 2>/dev/null | grep -c "reboot" || echo 0').strip()
+
+            try:
+                summary_parts.append(f"Critical events (24h): {int(crit_count)}")
+                summary_parts.append(f"Error events (24h): {int(err_count)}")
+                summary_parts.append(f"Failed auth attempts (24h): {int(failed_logins)}")
+                summary_parts.append(f"Reboots recorded: {int(reboot_count)}")
+            except ValueError:
+                summary_parts.append("Unable to parse event counts")
+
+            # Check for OOM killer
+            oom_events = self._ssh_exec(ssh, 'dmesg 2>/dev/null | grep -c "Out of memory" || echo 0').strip()
+            try:
+                if oom_events and int(oom_events) > 0:
+                    summary_parts.append(f"⚠️ OOM Killer invocations: {oom_events}")
+            except ValueError:
+                pass
+
+            # Check disk space warnings
+            disk_warn = self._ssh_exec(ssh, "df -h 2>/dev/null | awk 'NR>1 && int($5)>80 {print $6\": \"$5}' | head -5").strip()
+            if disk_warn:
+                summary_parts.append(f"⚠️ High disk usage: {disk_warn}")
+
+            self.result.event_summary = '\n'.join(summary_parts) if summary_parts else "No notable events"
 
             # Network
             self.result.network_info = self._ssh_exec(ssh, 'ip addr 2>/dev/null || ifconfig')
@@ -173,9 +239,126 @@ class RemoteScanner:
         except (ValueError, AttributeError):
             pass
 
-        # Recent logs
+        # Recent logs (System Event Log)
         result = session.run_ps('Get-EventLog -LogName System -Newest 50 | Select-Object TimeGenerated, EntryType, Source, Message | ConvertTo-Json')
         self.result.recent_logs = result.std_out.decode('utf-8')
+
+        # Security Events - Failed logins, audit events
+        result = session.run_ps('''
+            Get-WinEvent -FilterHashtable @{LogName='Security'; StartTime=(Get-Date).AddDays(-1)} -MaxEvents 100 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Id -in @(4625, 4624, 4634, 4648, 4672, 4768, 4769, 4771) } |
+            Select-Object TimeCreated, Id, @{N='Event';E={
+                switch($_.Id) {
+                    4625 {'Failed Login'}
+                    4624 {'Successful Login'}
+                    4634 {'Logoff'}
+                    4648 {'Explicit Credential Use'}
+                    4672 {'Admin Login'}
+                    4768 {'Kerberos TGT Request'}
+                    4769 {'Kerberos Service Ticket'}
+                    4771 {'Kerberos Pre-Auth Failed'}
+                }
+            }}, Message | Select-Object -First 50 | ConvertTo-Json
+        ''')
+        self.result.security_events = result.std_out.decode('utf-8') or "No security events found"
+
+        # System Events - Service changes, shutdowns, reboots
+        result = session.run_ps('''
+            Get-WinEvent -FilterHashtable @{LogName='System'; StartTime=(Get-Date).AddDays(-7)} -MaxEvents 100 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Id -in @(6005, 6006, 6008, 6009, 7034, 7035, 7036, 7040, 1074, 41) } |
+            Select-Object TimeCreated, Id, @{N='Event';E={
+                switch($_.Id) {
+                    6005 {'Event Log Started'}
+                    6006 {'Event Log Stopped'}
+                    6008 {'Unexpected Shutdown'}
+                    6009 {'OS Version at Boot'}
+                    7034 {'Service Crashed'}
+                    7035 {'Service Control'}
+                    7036 {'Service State Change'}
+                    7040 {'Service Start Type Change'}
+                    1074 {'Shutdown Initiated'}
+                    41 {'Kernel Power Error'}
+                }
+            }}, Message | Select-Object -First 50 | ConvertTo-Json
+        ''')
+        self.result.system_events = result.std_out.decode('utf-8') or "No system events found"
+
+        # Application Events - App crashes, errors
+        result = session.run_ps('''
+            Get-WinEvent -FilterHashtable @{LogName='Application'; Level=1,2; StartTime=(Get-Date).AddDays(-1)} -MaxEvents 50 -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, ProviderName, LevelDisplayName, Message |
+            ConvertTo-Json
+        ''')
+        self.result.application_events = result.std_out.decode('utf-8') or "No application events found"
+
+        # Hardware Events - Disk errors, hardware issues
+        result = session.run_ps('''
+            Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName=@('disk','Microsoft-Windows-Kernel-WHEA','Microsoft-Windows-StorPort','Microsoft-Windows-Ntfs'); StartTime=(Get-Date).AddDays(-7)} -MaxEvents 30 -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, ProviderName, LevelDisplayName, Message |
+            ConvertTo-Json;
+            Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Storage-Storport/Operational'} -MaxEvents 20 -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, Message | ConvertTo-Json
+        ''')
+        self.result.hardware_events = result.std_out.decode('utf-8') or "No hardware events found"
+
+        # Critical Errors - Critical and Error level events from System
+        result = session.run_ps('''
+            Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2; StartTime=(Get-Date).AddDays(-7)} -MaxEvents 50 -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, ProviderName, LevelDisplayName, Message |
+            ConvertTo-Json
+        ''')
+        self.result.critical_errors = result.std_out.decode('utf-8') or "No critical errors found"
+
+        # CBS Logs - Windows Component Store logs
+        result = session.run_ps('''
+            $cbsLog = "$env:windir\\Logs\\CBS\\CBS.log"
+            if (Test-Path $cbsLog) {
+                Get-Content $cbsLog -Tail 100 | Select-String -Pattern "(Error|Warning|Failed|HRESULT)" | Select-Object -Last 50 | ForEach-Object { $_.Line }
+            } else {
+                "CBS log not accessible"
+            }
+        ''')
+        self.result.cbs_logs = result.std_out.decode('utf-8') or "CBS logs not available"
+
+        # Recent Changes - Windows Update, installed software
+        result = session.run_ps('''
+            $updates = Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 20 HotFixID, Description, InstalledOn | ConvertTo-Json;
+            $installs = Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='MsiInstaller'; StartTime=(Get-Date).AddDays(-7)} -MaxEvents 20 -ErrorAction SilentlyContinue |
+            Select-Object TimeCreated, Message | ConvertTo-Json;
+            @{Updates=$updates; RecentInstalls=$installs} | ConvertTo-Json
+        ''')
+        self.result.recent_changes = result.std_out.decode('utf-8') or "No recent changes found"
+
+        # Event Summary - Build a summary of notable events
+        result = session.run_ps('''
+            $summary = @()
+            $critCount = (Get-WinEvent -FilterHashtable @{LogName='System'; Level=1; StartTime=(Get-Date).AddDays(-1)} -ErrorAction SilentlyContinue | Measure-Object).Count
+            $errCount = (Get-WinEvent -FilterHashtable @{LogName='System'; Level=2; StartTime=(Get-Date).AddDays(-1)} -ErrorAction SilentlyContinue | Measure-Object).Count
+            $failedLogins = (Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625; StartTime=(Get-Date).AddDays(-1)} -ErrorAction SilentlyContinue | Measure-Object).Count
+            $unexpectedShutdowns = (Get-WinEvent -FilterHashtable @{LogName='System'; Id=6008; StartTime=(Get-Date).AddDays(-7)} -ErrorAction SilentlyContinue | Measure-Object).Count
+
+            $summary += "Critical events (24h): $critCount"
+            $summary += "Error events (24h): $errCount"
+            $summary += "Failed login attempts (24h): $failedLogins"
+            $summary += "Unexpected shutdowns (7d): $unexpectedShutdowns"
+
+            # Check disk space
+            Get-WmiObject Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
+                $pctFree = [math]::Round(($_.FreeSpace / $_.Size) * 100, 1)
+                if ($pctFree -lt 20) {
+                    $summary += "⚠️ Low disk space on $($_.DeviceID): $pctFree% free"
+                }
+            }
+
+            # Check for BSOD events
+            $bsodCount = (Get-WinEvent -FilterHashtable @{LogName='System'; Id=1001; ProviderName='Microsoft-Windows-WER-SystemErrorReporting'; StartTime=(Get-Date).AddDays(-30)} -ErrorAction SilentlyContinue | Measure-Object).Count
+            if ($bsodCount -gt 0) {
+                $summary += "⚠️ Blue screen events (30d): $bsodCount"
+            }
+
+            $summary -join "`n"
+        ''')
+        self.result.event_summary = result.std_out.decode('utf-8') or "No notable events"
 
         # Network
         result = session.run_ps('Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress, AddressFamily | ConvertTo-Json')
