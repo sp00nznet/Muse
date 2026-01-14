@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}AV Scan Result - {{ host.hostname }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <a href="{{ url_for('main.host_detail', host_id=host.id) }}" style="color: var(--gray-600); text-decoration: none;">&larr; Back to {{ host.hostname }}</a>
+</div>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div>
+        <h1>AV Scan Result</h1>
+        <p style="color: var(--gray-600);">{{ host.hostname }} - {{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+    </div>
+    <a href="{{ url_for('main.av_scan_host', host_id=host.id) }}" class="btn btn-primary">Run New Scan</a>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="stat-card">
+        <div class="stat-label">Status</div>
+        <div style="margin-top: 0.5rem;">
+            {% if scan.success %}
+                {% if scan.threats_found > 0 %}
+                    <span class="badge badge-error" style="font-size: 1rem;">Threats Found</span>
+                {% else %}
+                    <span class="badge badge-online" style="font-size: 1rem;">Clean</span>
+                {% endif %}
+            {% else %}
+                <span class="badge badge-error" style="font-size: 1rem;">Failed</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Scan Type</div>
+        <div class="stat-value" style="font-size: 1.25rem; text-transform: capitalize;">{{ scan.scan_type }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Files Scanned</div>
+        <div class="stat-value">{{ scan.files_scanned or 0 }}</div>
+    </div>
+    <div class="stat-card {% if scan.threats_found > 0 %}error{% endif %}">
+        <div class="stat-label">Threats Found</div>
+        <div class="stat-value">{{ scan.threats_found or 0 }}</div>
+    </div>
+</div>
+
+{% if scan.success %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Scan Summary</h2>
+    </div>
+
+    {% if scan.scan_summary %}
+    <p style="margin-bottom: 1rem;">{{ scan.scan_summary }}</p>
+    {% endif %}
+
+    {% if scan.threats_found > 0 %}
+    <div class="alert alert-error" style="margin-bottom: 1rem;">
+        <strong>Warning:</strong> {{ scan.threats_found }} threat(s) detected on this system.
+        Review the details below and take appropriate action.
+    </div>
+
+    <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Threat Details</h3>
+    <pre>{{ scan.threat_details }}</pre>
+    {% else %}
+    <div class="alert alert-success">
+        No threats were detected during this scan.
+    </div>
+    {% endif %}
+
+    {% if scan.paths_scanned %}
+    <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;">Paths Scanned</summary>
+        <pre style="margin-top: 0.5rem;">{{ scan.paths_scanned.replace(',', '\n') }}</pre>
+    </details>
+    {% endif %}
+</div>
+
+{% else %}
+<div class="card">
+    <div class="alert alert-error">
+        <strong>Scan Failed:</strong> {{ scan.error_message }}
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Scan Metadata</h2>
+    </div>
+    <table class="table">
+        <tr>
+            <th style="width: 200px;">Started</th>
+            <td>{{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        </tr>
+        <tr>
+            <th>Completed</th>
+            <td>{{ scan.completed_at.strftime('%Y-%m-%d %H:%M:%S') if scan.completed_at else 'N/A' }}</td>
+        </tr>
+        <tr>
+            <th>Duration</th>
+            <td>
+                {% if scan.completed_at %}
+                    {{ (scan.completed_at - scan.created_at).total_seconds()|round(1) }} seconds
+                {% else %}
+                    N/A
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>Scan Type</th>
+            <td style="text-transform: capitalize;">{{ scan.scan_type }}</td>
+        </tr>
+    </table>
+</div>
+{% endblock %}

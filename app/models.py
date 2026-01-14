@@ -47,6 +47,7 @@ class Host(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     scans = db.relationship('ScanResult', backref='host', lazy=True, order_by='desc(ScanResult.created_at)')
+    av_scans = db.relationship('AVScanResult', backref='host', lazy=True, order_by='desc(AVScanResult.created_at)')
 
     def to_dict(self):
         return {
@@ -114,4 +115,41 @@ class ScanResult(db.Model):
             'process_count': self.process_count,
             'recent_logs': self.recent_logs,
             'network_info': self.network_info
+        }
+
+
+class AVScanResult(db.Model):
+    __tablename__ = 'av_scan_results'
+
+    id = db.Column(db.Integer, primary_key=True)
+    host_id = db.Column(db.Integer, db.ForeignKey('hosts.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    success = db.Column(db.Boolean, default=False)
+    error_message = db.Column(db.Text, nullable=True)
+
+    # Scan configuration
+    scan_type = db.Column(db.String(20), default='quick')  # quick, full, custom
+    paths_scanned = db.Column(db.Text, nullable=True)
+
+    # Results
+    files_scanned = db.Column(db.Integer, default=0)
+    threats_found = db.Column(db.Integer, default=0)
+    threat_details = db.Column(db.Text, nullable=True)
+    scan_summary = db.Column(db.Text, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'host_id': self.host_id,
+            'created_at': self.created_at.isoformat(),
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'success': self.success,
+            'error_message': self.error_message,
+            'scan_type': self.scan_type,
+            'paths_scanned': self.paths_scanned,
+            'files_scanned': self.files_scanned,
+            'threats_found': self.threats_found,
+            'threat_details': self.threat_details,
+            'scan_summary': self.scan_summary
         }
