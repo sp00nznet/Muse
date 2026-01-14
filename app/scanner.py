@@ -172,6 +172,171 @@ class RemoteScanner:
             # Network
             self.result.network_info = self._ssh_exec(ssh, 'ip addr 2>/dev/null || ifconfig')
 
+            # =========================================================
+            # SYSTEM UPDATES & PACKAGE INFO
+            # =========================================================
+
+            # Pending Updates - Check for available updates
+            self.result.pending_updates = self._ssh_exec(
+                ssh,
+                '''
+                if command -v apt-get &>/dev/null; then
+                    apt-get -s upgrade 2>/dev/null | grep -E "^Inst" | head -50
+                elif command -v yum &>/dev/null; then
+                    yum check-update 2>/dev/null | tail -50
+                elif command -v dnf &>/dev/null; then
+                    dnf check-update 2>/dev/null | tail -50
+                elif command -v zypper &>/dev/null; then
+                    zypper list-updates 2>/dev/null | head -50
+                else
+                    echo "Unknown package manager"
+                fi
+                '''
+            )
+
+            # Update History - Recent package updates
+            self.result.update_history = self._ssh_exec(
+                ssh,
+                '''
+                if [ -f /var/log/apt/history.log ]; then
+                    grep -E "^(Start-Date|Commandline|Upgrade|Install)" /var/log/apt/history.log | tail -100
+                elif [ -f /var/log/dpkg.log ]; then
+                    grep -E "(install|upgrade)" /var/log/dpkg.log | tail -50
+                elif [ -f /var/log/yum.log ]; then
+                    tail -50 /var/log/yum.log
+                elif [ -f /var/log/dnf.rpm.log ]; then
+                    tail -50 /var/log/dnf.rpm.log
+                else
+                    journalctl --since "30 days ago" --no-pager 2>/dev/null | grep -iE "(apt|yum|dnf|installed|upgraded)" | tail -50 || echo "No update history found"
+                fi
+                '''
+            )
+
+            # Last Update Check
+            self.result.last_update_check = self._ssh_exec(
+                ssh,
+                '''
+                if [ -f /var/lib/apt/periodic/update-success-stamp ]; then
+                    stat -c %y /var/lib/apt/periodic/update-success-stamp 2>/dev/null
+                elif [ -f /var/cache/apt/pkgcache.bin ]; then
+                    stat -c %y /var/cache/apt/pkgcache.bin 2>/dev/null
+                elif [ -f /var/cache/yum/timedhosts ]; then
+                    stat -c %y /var/cache/yum/timedhosts 2>/dev/null
+                elif [ -f /var/cache/dnf/last_makecache ]; then
+                    cat /var/cache/dnf/last_makecache 2>/dev/null
+                else
+                    echo "Unknown"
+                fi
+                '''
+            ).strip()
+
+            # =========================================================
+            # DRIVER INFORMATION
+            # =========================================================
+
+            # Driver Info - Loaded kernel modules with versions
+            self.result.driver_info = self._ssh_exec(
+                ssh,
+                '''
+                echo "=== Loaded Kernel Modules ==="
+                lsmod | head -50
+                echo ""
+                echo "=== Key Driver Versions ==="
+                for mod in $(lsmod | awk 'NR>1 {print $1}' | head -20); do
+                    modinfo $mod 2>/dev/null | grep -E "^(filename|version|description):" | head -3
+                    echo "---"
+                done 2>/dev/null | head -100
+                '''
+            )
+
+            # Driver Updates - Check for firmware/driver updates
+            self.result.driver_updates = self._ssh_exec(
+                ssh,
+                '''
+                if command -v fwupdmgr &>/dev/null; then
+                    echo "=== Firmware Updates Available ==="
+                    fwupdmgr get-updates 2>/dev/null | head -30 || echo "No firmware updates"
+                fi
+                if command -v ubuntu-drivers &>/dev/null; then
+                    echo "=== Recommended Drivers ==="
+                    ubuntu-drivers list 2>/dev/null || echo "No driver recommendations"
+                fi
+                '''
+            )
+
+            # =========================================================
+            # BUILD & VERSION INFO
+            # =========================================================
+
+            # Kernel Version
+            self.result.kernel_version = self._ssh_exec(ssh, 'uname -r').strip()
+
+            # Build Info - Detailed version information
+            self.result.build_info = self._ssh_exec(
+                ssh,
+                '''
+                echo "=== OS Release ==="
+                cat /etc/os-release 2>/dev/null || cat /etc/*-release 2>/dev/null | head -20
+                echo ""
+                echo "=== Kernel Details ==="
+                uname -a
+                echo ""
+                echo "=== LSB Release ==="
+                lsb_release -a 2>/dev/null || echo "LSB not available"
+                echo ""
+                echo "=== Build Date ==="
+                stat -c %y /boot/vmlinuz-$(uname -r) 2>/dev/null || echo "Unknown"
+                '''
+            )
+
+            # Installed Packages - Key packages and their versions
+            self.result.installed_packages = self._ssh_exec(
+                ssh,
+                '''
+                if command -v dpkg &>/dev/null; then
+                    echo "=== Key Packages (dpkg) ==="
+                    dpkg -l | grep -E "^ii" | awk '{print $2, $3}' | grep -E "(linux-image|openssh|nginx|apache|mysql|postgres|docker|python|node|java|php)" | head -30
+                    echo ""
+                    echo "=== Total Packages ==="
+                    dpkg -l | grep -c "^ii"
+                elif command -v rpm &>/dev/null; then
+                    echo "=== Key Packages (rpm) ==="
+                    rpm -qa --qf "%{NAME} %{VERSION}-%{RELEASE}\n" | grep -E "(kernel|openssh|nginx|httpd|mysql|postgres|docker|python|node|java|php)" | head -30
+                    echo ""
+                    echo "=== Total Packages ==="
+                    rpm -qa | wc -l
+                fi
+                '''
+            )
+
+            # =========================================================
+            # SYSTEM SNAPSHOT FOR COMPARISON
+            # =========================================================
+
+            # Create a JSON snapshot for easy comparison
+            snapshot_data = {
+                'hostname': self.result.hostname_reported,
+                'os_type': 'linux',
+                'kernel_version': self.result.kernel_version,
+                'cpu_usage': self.result.cpu_usage,
+                'memory_percent': self.result.memory_percent,
+                'memory_total_gb': round(self.result.memory_total / (1024**3), 2) if self.result.memory_total else None,
+                'process_count': self.result.process_count,
+                'uptime': self.result.uptime,
+                'pending_update_count': len([l for l in (self.result.pending_updates or '').split('\n') if l.strip() and l.startswith('Inst')]),
+                'scan_time': datetime.utcnow().isoformat()
+            }
+
+            # Extract distro info
+            os_info = self.result.os_info or ''
+            for line in os_info.split('\n'):
+                if line.startswith('PRETTY_NAME='):
+                    snapshot_data['os_pretty_name'] = line.split('=', 1)[1].strip('"')
+                elif line.startswith('VERSION_ID='):
+                    snapshot_data['os_version'] = line.split('=', 1)[1].strip('"')
+
+            self.result.system_snapshot = json.dumps(snapshot_data)
+
         finally:
             ssh.close()
 
@@ -363,6 +528,205 @@ class RemoteScanner:
         # Network
         result = session.run_ps('Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress, AddressFamily | ConvertTo-Json')
         self.result.network_info = result.std_out.decode('utf-8')
+
+        # =========================================================
+        # SYSTEM UPDATES & PACKAGE INFO (Windows)
+        # =========================================================
+
+        # Pending Updates - Check Windows Update for available updates
+        result = session.run_ps('''
+            $UpdateSession = New-Object -ComObject Microsoft.Update.Session
+            $UpdateSearcher = $UpdateSession.CreateUpdateSearcher()
+            try {
+                $SearchResult = $UpdateSearcher.Search("IsInstalled=0")
+                $Updates = @()
+                foreach ($Update in $SearchResult.Updates) {
+                    $Updates += @{
+                        Title = $Update.Title
+                        KB = ($Update.KBArticleIDs -join ", ")
+                        Severity = $Update.MsrcSeverity
+                        Size = [math]::Round($Update.MaxDownloadSize / 1MB, 2)
+                        Categories = ($Update.Categories | ForEach-Object { $_.Name }) -join ", "
+                    }
+                }
+                @{
+                    PendingCount = $SearchResult.Updates.Count
+                    Updates = $Updates | Select-Object -First 30
+                } | ConvertTo-Json -Depth 3
+            } catch {
+                @{ Error = $_.Exception.Message; PendingCount = 0 } | ConvertTo-Json
+            }
+        ''')
+        self.result.pending_updates = result.std_out.decode('utf-8')
+
+        # Update History - Recent Windows Updates
+        result = session.run_ps('''
+            $Session = New-Object -ComObject Microsoft.Update.Session
+            $Searcher = $Session.CreateUpdateSearcher()
+            $HistoryCount = $Searcher.GetTotalHistoryCount()
+            $History = $Searcher.QueryHistory(0, [Math]::Min($HistoryCount, 50))
+            $History | Select-Object @{N='Date';E={$_.Date}},
+                @{N='Title';E={$_.Title}},
+                @{N='Result';E={
+                    switch($_.ResultCode) {
+                        1 {'In Progress'}
+                        2 {'Succeeded'}
+                        3 {'Succeeded With Errors'}
+                        4 {'Failed'}
+                        5 {'Aborted'}
+                        default {'Unknown'}
+                    }
+                }},
+                @{N='KB';E={
+                    if ($_.Title -match 'KB(\d+)') { $Matches[1] } else { '' }
+                }} | ConvertTo-Json
+        ''')
+        self.result.update_history = result.std_out.decode('utf-8')
+
+        # Last Update Check
+        result = session.run_ps('''
+            $AutoUpdate = (New-Object -ComObject Microsoft.Update.AutoUpdate)
+            @{
+                LastSearchSuccess = $AutoUpdate.Results.LastSearchSuccessDate
+                LastInstallSuccess = $AutoUpdate.Results.LastInstallationSuccessDate
+            } | ConvertTo-Json
+        ''')
+        self.result.last_update_check = result.std_out.decode('utf-8')
+
+        # =========================================================
+        # DRIVER INFORMATION (Windows)
+        # =========================================================
+
+        # Driver Info - Installed drivers with versions
+        result = session.run_ps('''
+            Get-WmiObject Win32_PnPSignedDriver |
+            Where-Object { $_.DeviceName -ne $null } |
+            Select-Object DeviceName, DriverVersion, DriverDate, Manufacturer, DriverProviderName |
+            Sort-Object DeviceName |
+            Select-Object -First 50 |
+            ConvertTo-Json
+        ''')
+        self.result.driver_info = result.std_out.decode('utf-8')
+
+        # Driver Updates - Check for driver updates via Windows Update
+        result = session.run_ps('''
+            $UpdateSession = New-Object -ComObject Microsoft.Update.Session
+            $UpdateSearcher = $UpdateSession.CreateUpdateSearcher()
+            try {
+                $SearchResult = $UpdateSearcher.Search("IsInstalled=0 AND Type='Driver'")
+                $DriverUpdates = @()
+                foreach ($Update in $SearchResult.Updates) {
+                    $DriverUpdates += @{
+                        Title = $Update.Title
+                        DriverClass = $Update.DriverClass
+                        DriverManufacturer = $Update.DriverManufacturer
+                        DriverModel = $Update.DriverModel
+                        DriverVerDate = $Update.DriverVerDate
+                    }
+                }
+                @{
+                    AvailableDriverUpdates = $SearchResult.Updates.Count
+                    Drivers = $DriverUpdates | Select-Object -First 20
+                } | ConvertTo-Json -Depth 3
+            } catch {
+                @{ Error = $_.Exception.Message } | ConvertTo-Json
+            }
+        ''')
+        self.result.driver_updates = result.std_out.decode('utf-8')
+
+        # =========================================================
+        # BUILD & VERSION INFO (Windows)
+        # =========================================================
+
+        # Kernel/NT Version
+        result = session.run_ps('[System.Environment]::OSVersion.Version.ToString()')
+        self.result.kernel_version = result.std_out.decode('utf-8').strip()
+
+        # Build Info - Detailed Windows version information
+        result = session.run_ps('''
+            $OS = Get-CimInstance Win32_OperatingSystem
+            $CS = Get-CimInstance Win32_ComputerSystem
+            @{
+                Caption = $OS.Caption
+                Version = $OS.Version
+                BuildNumber = $OS.BuildNumber
+                OSArchitecture = $OS.OSArchitecture
+                ServicePackMajorVersion = $OS.ServicePackMajorVersion
+                InstallDate = $OS.InstallDate
+                LastBootUpTime = $OS.LastBootUpTime
+                RegisteredUser = $OS.RegisteredUser
+                SystemDirectory = $OS.SystemDirectory
+                WindowsDirectory = $OS.WindowsDirectory
+                Manufacturer = $CS.Manufacturer
+                Model = $CS.Model
+                SystemType = $CS.SystemType
+                NumberOfProcessors = $CS.NumberOfProcessors
+                NumberOfLogicalProcessors = $CS.NumberOfLogicalProcessors
+                TotalPhysicalMemoryGB = [math]::Round($CS.TotalPhysicalMemory / 1GB, 2)
+                Domain = $CS.Domain
+                PartOfDomain = $CS.PartOfDomain
+                CurrentTimeZone = (Get-TimeZone).DisplayName
+                UBR = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue).UBR
+                DisplayVersion = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue).DisplayVersion
+                ReleaseId = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue).ReleaseId
+            } | ConvertTo-Json
+        ''')
+        self.result.build_info = result.std_out.decode('utf-8')
+
+        # Installed Features/Roles
+        result = session.run_ps('''
+            $features = @()
+            # Windows Server Roles
+            if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
+                $features += Get-WindowsFeature | Where-Object {$_.Installed} | Select-Object Name, DisplayName | ConvertTo-Json
+            }
+            # Windows Optional Features (Desktop)
+            else {
+                Get-WindowsOptionalFeature -Online | Where-Object {$_.State -eq "Enabled"} |
+                Select-Object FeatureName, State | Select-Object -First 30 | ConvertTo-Json
+            }
+        ''')
+        self.result.installed_packages = result.std_out.decode('utf-8')
+
+        # =========================================================
+        # SYSTEM SNAPSHOT FOR COMPARISON (Windows)
+        # =========================================================
+
+        # Parse build info for snapshot
+        try:
+            build_data = json.loads(self.result.build_info) if self.result.build_info else {}
+        except json.JSONDecodeError:
+            build_data = {}
+
+        # Parse pending updates count
+        try:
+            pending_data = json.loads(self.result.pending_updates) if self.result.pending_updates else {}
+            pending_count = pending_data.get('PendingCount', 0)
+        except json.JSONDecodeError:
+            pending_count = 0
+
+        snapshot_data = {
+            'hostname': self.result.hostname_reported,
+            'os_type': 'windows',
+            'os_pretty_name': build_data.get('Caption', 'Windows'),
+            'os_version': build_data.get('DisplayVersion') or build_data.get('ReleaseId', ''),
+            'build_number': build_data.get('BuildNumber', ''),
+            'ubr': build_data.get('UBR', ''),
+            'full_build': f"{build_data.get('BuildNumber', '')}.{build_data.get('UBR', '')}",
+            'kernel_version': self.result.kernel_version,
+            'cpu_usage': self.result.cpu_usage,
+            'memory_percent': self.result.memory_percent,
+            'memory_total_gb': build_data.get('TotalPhysicalMemoryGB'),
+            'process_count': self.result.process_count,
+            'uptime': self.result.uptime,
+            'pending_update_count': pending_count,
+            'manufacturer': build_data.get('Manufacturer', ''),
+            'model': build_data.get('Model', ''),
+            'domain': build_data.get('Domain', ''),
+            'scan_time': datetime.utcnow().isoformat()
+        }
+
+        self.result.system_snapshot = json.dumps(snapshot_data)
 
 
 def scan_host(host_id: int, password: str = None) -> ScanResult:

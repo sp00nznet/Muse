@@ -935,6 +935,330 @@ GET /api/export/av-scans?days=30&threats_only=true
 
 ---
 
+## 🔄 Server Comparison
+
+### Compare Hosts Side-by-Side
+
+Compare two or more hosts with full system details and automatic difference detection.
+
+```http
+POST /api/compare/hosts
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "host_ids": [1, 2, 3]
+}
+```
+
+**Response:**
+```json
+{
+  "compared_at": "2024-01-15T12:00:00",
+  "host_count": 3,
+  "hosts": [
+    {
+      "host_id": 1,
+      "hostname": "web-server-01",
+      "os_type": "linux",
+      "status": "online",
+      "last_scan": "2024-01-15T10:30:00",
+      "snapshot": {
+        "os_pretty_name": "Ubuntu 22.04.3 LTS",
+        "kernel_version": "5.15.0-91-generic",
+        "cpu_usage": 23.5,
+        "memory_percent": 45.2,
+        "pending_update_count": 5
+      },
+      "metrics": { ... },
+      "system": { ... },
+      "updates": { ... },
+      "drivers": { ... }
+    }
+  ],
+  "differences": {
+    "os_version_mismatch": true,
+    "kernel_mismatch": true,
+    "update_status_varies": false,
+    "details": [
+      {"type": "kernel_version", "message": "Kernel versions differ: 5.15.0-91, 5.15.0-89"}
+    ]
+  }
+}
+```
+
+---
+
+### Compare Event Logs
+
+Compare event logs between hosts to identify common issues.
+
+```http
+POST /api/compare/events
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "host_ids": [1, 2],
+  "event_type": "all"
+}
+```
+
+**Event Types:** `all`, `security`, `system`, `application`, `critical`
+
+**Response:**
+```json
+{
+  "compared_at": "2024-01-15T12:00:00",
+  "event_type": "all",
+  "host_count": 2,
+  "hosts": [
+    {
+      "host_id": 1,
+      "hostname": "web-server-01",
+      "events": {
+        "security": "...",
+        "system": "...",
+        "application": "...",
+        "critical": "...",
+        "summary": "Critical events (24h): 0\nError events (24h): 2"
+      }
+    }
+  ]
+}
+```
+
+---
+
+### Compare Update Status
+
+Compare pending updates and patch levels between hosts.
+
+```http
+POST /api/compare/updates
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "host_ids": [1, 2, 3]
+}
+```
+
+**Response:**
+```json
+{
+  "compared_at": "2024-01-15T12:00:00",
+  "host_count": 3,
+  "hosts_needing_updates": 2,
+  "hosts": [
+    {
+      "host_id": 1,
+      "hostname": "web-server-01",
+      "os_type": "linux",
+      "updates": {
+        "pending_count": 12,
+        "pending_updates": "...",
+        "update_history": "...",
+        "kernel_version": "5.15.0-91-generic"
+      }
+    }
+  ]
+}
+```
+
+---
+
+### Compare Driver Information
+
+Compare installed drivers and available updates between hosts.
+
+```http
+POST /api/compare/drivers
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "host_ids": [1, 2]
+}
+```
+
+**Response:**
+```json
+{
+  "compared_at": "2024-01-15T12:00:00",
+  "host_count": 2,
+  "hosts": [
+    {
+      "host_id": 1,
+      "hostname": "web-server-01",
+      "os_type": "windows",
+      "drivers": {
+        "driver_info": "[{\"DeviceName\": \"Intel UHD\", \"DriverVersion\": \"31.0.101.4502\"}]",
+        "driver_updates": "{\"AvailableDriverUpdates\": 2}"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## 📋 At-a-Glance Summaries
+
+### Get Host Summary
+
+Get a quick at-a-glance summary for a single host.
+
+```http
+GET /api/hosts/{host_id}/summary
+```
+
+**Response:**
+```json
+{
+  "host_id": 1,
+  "hostname": "web-server-01",
+  "status": "online",
+  "os_type": "linux",
+  "has_scan_data": true,
+  "last_scan": "2024-01-15T10:30:00",
+  "at_a_glance": {
+    "os_name": "Ubuntu 22.04.3 LTS",
+    "os_version": "22.04",
+    "kernel_version": "5.15.0-91-generic",
+    "build_number": "",
+    "uptime": "up 15 days, 3 hours",
+    "cpu_usage": 23.5,
+    "memory_percent": 45.2,
+    "memory_total_gb": 16.0,
+    "process_count": 142,
+    "pending_updates": 5,
+    "recent_threats": 0,
+    "manufacturer": "Dell Inc.",
+    "model": "PowerEdge R640"
+  },
+  "health_warnings": ["High CPU: 85.2%"],
+  "health_status": "warning"
+}
+```
+
+---
+
+### Get All Hosts Summary
+
+Get at-a-glance summaries for all your hosts.
+
+```http
+GET /api/summary/all
+```
+
+**Response:**
+```json
+{
+  "generated_at": "2024-01-15T12:00:00",
+  "total_hosts": 10,
+  "by_status": {
+    "online": 7,
+    "offline": 1,
+    "error": 1,
+    "pending": 1
+  },
+  "hosts": [
+    {
+      "host_id": 1,
+      "hostname": "web-server-01",
+      "status": "online",
+      "os_type": "linux",
+      "last_scan": "2024-01-15T10:30:00",
+      "os_name": "Ubuntu 22.04.3 LTS",
+      "kernel_version": "5.15.0-91-generic",
+      "cpu_usage": 23.5,
+      "memory_percent": 45.2,
+      "pending_updates": 5
+    }
+  ]
+}
+```
+
+---
+
+### Get Update Summary
+
+Get a summary of update status across all hosts.
+
+```http
+GET /api/summary/updates
+```
+
+**Response:**
+```json
+{
+  "hosts_scanned": 10,
+  "hosts_up_to_date": 6,
+  "hosts_need_updates": 4,
+  "total_pending_updates": 47,
+  "by_host": [
+    {
+      "host_id": 3,
+      "hostname": "db-server",
+      "os_type": "linux",
+      "pending_count": 23,
+      "kernel_version": "5.15.0-89-generic",
+      "last_update_check": "2024-01-14T08:00:00",
+      "last_scan": "2024-01-15T10:30:00"
+    }
+  ]
+}
+```
+
+---
+
+### Get Version Summary
+
+Get a summary of OS and kernel versions across all hosts, grouped by version.
+
+```http
+GET /api/summary/versions
+```
+
+**Response:**
+```json
+{
+  "generated_at": "2024-01-15T12:00:00",
+  "linux_versions": [
+    {
+      "kernel_version": "5.15.0-91-generic",
+      "os_name": "Ubuntu 22.04.3 LTS",
+      "hosts": [
+        {"host_id": 1, "hostname": "web-01", "os_version": "22.04"},
+        {"host_id": 2, "hostname": "web-02", "os_version": "22.04"}
+      ]
+    }
+  ],
+  "windows_versions": [
+    {
+      "kernel_version": "10.0.19045.0",
+      "os_name": "Microsoft Windows Server 2022",
+      "hosts": [
+        {"host_id": 5, "hostname": "dc-01", "build_number": "20348.2159"}
+      ]
+    }
+  ],
+  "linux_host_count": 6,
+  "windows_host_count": 4
+}
+```
+
+---
+
 ## ❌ Error Responses
 
 All endpoints return errors in this format:

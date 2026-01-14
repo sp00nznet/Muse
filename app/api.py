@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, timedelta
+import json
 from sqlalchemy import func, or_
 from app import db
 from app.models import Host, ScanResult, AVScanResult, User
@@ -992,4 +993,605 @@ def export_av_scans():
         'total_scans': len(export_data),
         'total_threats': sum(s.threats_found for s in scans),
         'scans': export_data
+    })
+
+
+# =============================================================================
+# SERVER COMPARISON ENDPOINTS
+# =============================================================================
+
+@api_bp.route('/compare/hosts', methods=['POST'])
+@login_required
+def compare_hosts():
+    """Compare two or more hosts side by side."""
+    data = request.get_json()
+
+    if not data or 'host_ids' not in data:
+        return jsonify({'error': 'host_ids array is required'}), 400
+
+    host_ids = data['host_ids']
+    if len(host_ids) < 2:
+        return jsonify({'error': 'At least 2 host_ids required for comparison'}), 400
+
+    # Verify all hosts belong to user
+    hosts = []
+    for host_id in host_ids:
+        host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+        if not host:
+            return jsonify({'error': f'Host {host_id} not found'}), 404
+        hosts.append(host)
+
+    # Get latest scan for each host
+    comparisons = []
+    for host in hosts:
+        latest_scan = ScanResult.query.filter_by(
+            host_id=host.id,
+            success=True
+        ).order_by(ScanResult.created_at.desc()).first()
+
+        if latest_scan:
+            # Parse system snapshot
+            try:
+                snapshot = json.loads(latest_scan.system_snapshot) if latest_scan.system_snapshot else {}
+            except json.JSONDecodeError:
+                snapshot = {}
+
+            comparisons.append({
+                'host_id': host.id,
+                'hostname': host.hostname,
+                'os_type': host.os_type,
+                'status': host.status,
+                'last_scan': latest_scan.created_at.isoformat(),
+                'snapshot': snapshot,
+                'metrics': {
+                    'cpu_usage': latest_scan.cpu_usage,
+                    'memory_percent': latest_scan.memory_percent,
+                    'memory_total': latest_scan.memory_total,
+                    'memory_used': latest_scan.memory_used,
+                    'process_count': latest_scan.process_count,
+                    'uptime': latest_scan.uptime
+                },
+                'system': {
+                    'os_info': latest_scan.os_info,
+                    'kernel_version': latest_scan.kernel_version,
+                    'build_info': latest_scan.build_info
+                },
+                'updates': {
+                    'pending_updates': latest_scan.pending_updates,
+                    'last_update_check': latest_scan.last_update_check
+                },
+                'drivers': {
+                    'driver_info': latest_scan.driver_info,
+                    'driver_updates': latest_scan.driver_updates
+                }
+            })
+        else:
+            comparisons.append({
+                'host_id': host.id,
+                'hostname': host.hostname,
+                'os_type': host.os_type,
+                'status': host.status,
+                'last_scan': None,
+                'snapshot': {},
+                'metrics': None,
+                'system': None,
+                'updates': None,
+                'drivers': None
+            })
+
+    # Build comparison summary highlighting differences
+    differences = _find_differences(comparisons)
+
+    return jsonify({
+        'compared_at': datetime.utcnow().isoformat(),
+        'host_count': len(hosts),
+        'hosts': comparisons,
+        'differences': differences
+    })
+
+
+def _find_differences(comparisons):
+    """Find key differences between compared hosts."""
+    differences = {
+        'os_version_mismatch': False,
+        'kernel_mismatch': False,
+        'update_status_varies': False,
+        'memory_difference_significant': False,
+        'cpu_difference_significant': False,
+        'details': []
+    }
+
+    if len(comparisons) < 2:
+        return differences
+
+    # Get snapshots
+    snapshots = [c.get('snapshot', {}) for c in comparisons if c.get('snapshot')]
+
+    if len(snapshots) >= 2:
+        # Check OS version
+        os_versions = set(s.get('os_version', '') for s in snapshots if s.get('os_version'))
+        if len(os_versions) > 1:
+            differences['os_version_mismatch'] = True
+            differences['details'].append({
+                'type': 'os_version',
+                'message': f'OS versions differ: {", ".join(os_versions)}'
+            })
+
+        # Check kernel version
+        kernel_versions = set(s.get('kernel_version', '') for s in snapshots if s.get('kernel_version'))
+        if len(kernel_versions) > 1:
+            differences['kernel_mismatch'] = True
+            differences['details'].append({
+                'type': 'kernel_version',
+                'message': f'Kernel versions differ: {", ".join(kernel_versions)}'
+            })
+
+        # Check pending updates
+        update_counts = [s.get('pending_update_count', 0) for s in snapshots]
+        if max(update_counts) - min(update_counts) > 5:
+            differences['update_status_varies'] = True
+            differences['details'].append({
+                'type': 'pending_updates',
+                'message': f'Update counts vary significantly: {update_counts}'
+            })
+
+        # Check CPU usage difference
+        cpu_values = [s.get('cpu_usage') for s in snapshots if s.get('cpu_usage') is not None]
+        if cpu_values and max(cpu_values) - min(cpu_values) > 30:
+            differences['cpu_difference_significant'] = True
+            differences['details'].append({
+                'type': 'cpu_usage',
+                'message': f'CPU usage varies significantly: {cpu_values}'
+            })
+
+        # Check memory usage difference
+        mem_values = [s.get('memory_percent') for s in snapshots if s.get('memory_percent') is not None]
+        if mem_values and max(mem_values) - min(mem_values) > 30:
+            differences['memory_difference_significant'] = True
+            differences['details'].append({
+                'type': 'memory_percent',
+                'message': f'Memory usage varies significantly: {mem_values}'
+            })
+
+    return differences
+
+
+@api_bp.route('/compare/events', methods=['POST'])
+@login_required
+def compare_events():
+    """Compare event logs between two or more hosts."""
+    data = request.get_json()
+
+    if not data or 'host_ids' not in data:
+        return jsonify({'error': 'host_ids array is required'}), 400
+
+    host_ids = data['host_ids']
+    event_type = data.get('event_type', 'all')  # all, security, system, application, critical
+
+    # Verify all hosts belong to user
+    hosts = []
+    for host_id in host_ids:
+        host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+        if not host:
+            return jsonify({'error': f'Host {host_id} not found'}), 404
+        hosts.append(host)
+
+    # Get latest scan for each host
+    event_comparisons = []
+    for host in hosts:
+        latest_scan = ScanResult.query.filter_by(
+            host_id=host.id,
+            success=True
+        ).order_by(ScanResult.created_at.desc()).first()
+
+        host_events = {
+            'host_id': host.id,
+            'hostname': host.hostname,
+            'os_type': host.os_type,
+            'last_scan': latest_scan.created_at.isoformat() if latest_scan else None,
+            'events': {}
+        }
+
+        if latest_scan:
+            if event_type in ['all', 'security']:
+                host_events['events']['security'] = latest_scan.security_events
+            if event_type in ['all', 'system']:
+                host_events['events']['system'] = latest_scan.system_events
+            if event_type in ['all', 'application']:
+                host_events['events']['application'] = latest_scan.application_events
+            if event_type in ['all', 'critical']:
+                host_events['events']['critical'] = latest_scan.critical_errors
+            host_events['events']['summary'] = latest_scan.event_summary
+
+        event_comparisons.append(host_events)
+
+    return jsonify({
+        'compared_at': datetime.utcnow().isoformat(),
+        'event_type': event_type,
+        'host_count': len(hosts),
+        'hosts': event_comparisons
+    })
+
+
+@api_bp.route('/compare/updates', methods=['POST'])
+@login_required
+def compare_updates():
+    """Compare update status between hosts."""
+    data = request.get_json()
+
+    if not data or 'host_ids' not in data:
+        return jsonify({'error': 'host_ids array is required'}), 400
+
+    host_ids = data['host_ids']
+
+    # Verify all hosts belong to user
+    hosts = []
+    for host_id in host_ids:
+        host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+        if not host:
+            return jsonify({'error': f'Host {host_id} not found'}), 404
+        hosts.append(host)
+
+    update_comparisons = []
+    for host in hosts:
+        latest_scan = ScanResult.query.filter_by(
+            host_id=host.id,
+            success=True
+        ).order_by(ScanResult.created_at.desc()).first()
+
+        host_updates = {
+            'host_id': host.id,
+            'hostname': host.hostname,
+            'os_type': host.os_type,
+            'last_scan': latest_scan.created_at.isoformat() if latest_scan else None
+        }
+
+        if latest_scan:
+            # Parse pending update count
+            pending_count = 0
+            if latest_scan.pending_updates:
+                try:
+                    if host.os_type == 'windows':
+                        pending_data = json.loads(latest_scan.pending_updates)
+                        pending_count = pending_data.get('PendingCount', 0)
+                    else:
+                        # Count Linux pending updates
+                        pending_count = len([l for l in latest_scan.pending_updates.split('\n')
+                                           if l.strip() and (l.startswith('Inst') or 'upgrade' in l.lower())])
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+            host_updates['updates'] = {
+                'pending_count': pending_count,
+                'pending_updates': latest_scan.pending_updates,
+                'update_history': latest_scan.update_history,
+                'last_update_check': latest_scan.last_update_check,
+                'kernel_version': latest_scan.kernel_version,
+                'build_info': latest_scan.build_info
+            }
+        else:
+            host_updates['updates'] = None
+
+        update_comparisons.append(host_updates)
+
+    # Find hosts that need updates
+    hosts_needing_updates = [
+        h for h in update_comparisons
+        if h.get('updates') and h['updates'].get('pending_count', 0) > 0
+    ]
+
+    return jsonify({
+        'compared_at': datetime.utcnow().isoformat(),
+        'host_count': len(hosts),
+        'hosts_needing_updates': len(hosts_needing_updates),
+        'hosts': update_comparisons
+    })
+
+
+@api_bp.route('/compare/drivers', methods=['POST'])
+@login_required
+def compare_drivers():
+    """Compare driver information between hosts."""
+    data = request.get_json()
+
+    if not data or 'host_ids' not in data:
+        return jsonify({'error': 'host_ids array is required'}), 400
+
+    host_ids = data['host_ids']
+
+    # Verify all hosts belong to user
+    hosts = []
+    for host_id in host_ids:
+        host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+        if not host:
+            return jsonify({'error': f'Host {host_id} not found'}), 404
+        hosts.append(host)
+
+    driver_comparisons = []
+    for host in hosts:
+        latest_scan = ScanResult.query.filter_by(
+            host_id=host.id,
+            success=True
+        ).order_by(ScanResult.created_at.desc()).first()
+
+        host_drivers = {
+            'host_id': host.id,
+            'hostname': host.hostname,
+            'os_type': host.os_type,
+            'last_scan': latest_scan.created_at.isoformat() if latest_scan else None
+        }
+
+        if latest_scan:
+            host_drivers['drivers'] = {
+                'driver_info': latest_scan.driver_info,
+                'driver_updates': latest_scan.driver_updates
+            }
+        else:
+            host_drivers['drivers'] = None
+
+        driver_comparisons.append(host_drivers)
+
+    return jsonify({
+        'compared_at': datetime.utcnow().isoformat(),
+        'host_count': len(hosts),
+        'hosts': driver_comparisons
+    })
+
+
+# =============================================================================
+# AT-A-GLANCE SUMMARY ENDPOINTS
+# =============================================================================
+
+@api_bp.route('/hosts/<int:host_id>/summary', methods=['GET'])
+@login_required
+def get_host_summary(host_id):
+    """Get an at-a-glance summary of a host."""
+    host = Host.query.filter_by(id=host_id, user_id=current_user.id).first()
+    if not host:
+        return jsonify({'error': 'Host not found'}), 404
+
+    latest_scan = ScanResult.query.filter_by(
+        host_id=host.id,
+        success=True
+    ).order_by(ScanResult.created_at.desc()).first()
+
+    if not latest_scan:
+        return jsonify({
+            'host_id': host.id,
+            'hostname': host.hostname,
+            'status': host.status,
+            'os_type': host.os_type,
+            'has_scan_data': False,
+            'message': 'No successful scan data available'
+        })
+
+    # Parse system snapshot
+    try:
+        snapshot = json.loads(latest_scan.system_snapshot) if latest_scan.system_snapshot else {}
+    except json.JSONDecodeError:
+        snapshot = {}
+
+    # Parse pending updates
+    pending_count = 0
+    if latest_scan.pending_updates:
+        try:
+            if host.os_type == 'windows':
+                pending_data = json.loads(latest_scan.pending_updates)
+                pending_count = pending_data.get('PendingCount', 0)
+            else:
+                pending_count = len([l for l in latest_scan.pending_updates.split('\n')
+                                   if l.strip() and l.startswith('Inst')])
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    # Get threat count from recent AV scans
+    recent_threats = db.session.query(func.sum(AVScanResult.threats_found)).filter(
+        AVScanResult.host_id == host.id,
+        AVScanResult.created_at >= datetime.utcnow() - timedelta(days=7)
+    ).scalar() or 0
+
+    # Determine health indicators
+    health_warnings = []
+    if latest_scan.cpu_usage and latest_scan.cpu_usage > 80:
+        health_warnings.append(f'High CPU: {latest_scan.cpu_usage:.1f}%')
+    if latest_scan.memory_percent and latest_scan.memory_percent > 80:
+        health_warnings.append(f'High Memory: {latest_scan.memory_percent:.1f}%')
+    if pending_count > 10:
+        health_warnings.append(f'{pending_count} pending updates')
+    if recent_threats > 0:
+        health_warnings.append(f'{recent_threats} threats detected (7d)')
+
+    return jsonify({
+        'host_id': host.id,
+        'hostname': host.hostname,
+        'status': host.status,
+        'os_type': host.os_type,
+        'has_scan_data': True,
+        'last_scan': latest_scan.created_at.isoformat(),
+        'at_a_glance': {
+            'os_name': snapshot.get('os_pretty_name', latest_scan.os_info[:50] if latest_scan.os_info else 'Unknown'),
+            'os_version': snapshot.get('os_version', ''),
+            'kernel_version': latest_scan.kernel_version,
+            'build_number': snapshot.get('full_build') or snapshot.get('build_number', ''),
+            'uptime': latest_scan.uptime,
+            'cpu_usage': latest_scan.cpu_usage,
+            'memory_percent': latest_scan.memory_percent,
+            'memory_total_gb': snapshot.get('memory_total_gb'),
+            'process_count': latest_scan.process_count,
+            'pending_updates': pending_count,
+            'recent_threats': recent_threats,
+            'manufacturer': snapshot.get('manufacturer', ''),
+            'model': snapshot.get('model', '')
+        },
+        'health_warnings': health_warnings,
+        'health_status': 'critical' if len(health_warnings) >= 2 else ('warning' if health_warnings else 'healthy')
+    })
+
+
+@api_bp.route('/summary/all', methods=['GET'])
+@login_required
+def get_all_hosts_summary():
+    """Get at-a-glance summaries for all hosts."""
+    hosts = Host.query.filter_by(user_id=current_user.id).all()
+
+    summaries = []
+    for host in hosts:
+        latest_scan = ScanResult.query.filter_by(
+            host_id=host.id,
+            success=True
+        ).order_by(ScanResult.created_at.desc()).first()
+
+        summary = {
+            'host_id': host.id,
+            'hostname': host.hostname,
+            'status': host.status,
+            'os_type': host.os_type
+        }
+
+        if latest_scan:
+            # Parse snapshot
+            try:
+                snapshot = json.loads(latest_scan.system_snapshot) if latest_scan.system_snapshot else {}
+            except json.JSONDecodeError:
+                snapshot = {}
+
+            summary['last_scan'] = latest_scan.created_at.isoformat()
+            summary['os_name'] = snapshot.get('os_pretty_name', '')
+            summary['kernel_version'] = latest_scan.kernel_version
+            summary['cpu_usage'] = latest_scan.cpu_usage
+            summary['memory_percent'] = latest_scan.memory_percent
+            summary['pending_updates'] = snapshot.get('pending_update_count', 0)
+        else:
+            summary['last_scan'] = None
+
+        summaries.append(summary)
+
+    # Sort by status (error first, then offline, online, pending)
+    status_order = {'error': 0, 'offline': 1, 'online': 2, 'pending': 3}
+    summaries.sort(key=lambda x: (status_order.get(x['status'], 4), x['hostname']))
+
+    return jsonify({
+        'generated_at': datetime.utcnow().isoformat(),
+        'total_hosts': len(hosts),
+        'by_status': {
+            'online': sum(1 for h in hosts if h.status == 'online'),
+            'offline': sum(1 for h in hosts if h.status == 'offline'),
+            'error': sum(1 for h in hosts if h.status == 'error'),
+            'pending': sum(1 for h in hosts if h.status == 'pending')
+        },
+        'hosts': summaries
+    })
+
+
+@api_bp.route('/summary/updates', methods=['GET'])
+@login_required
+def get_update_summary():
+    """Get a summary of update status across all hosts."""
+    hosts = Host.query.filter_by(user_id=current_user.id).all()
+
+    update_summary = {
+        'hosts_scanned': 0,
+        'hosts_up_to_date': 0,
+        'hosts_need_updates': 0,
+        'total_pending_updates': 0,
+        'by_host': []
+    }
+
+    for host in hosts:
+        latest_scan = ScanResult.query.filter_by(
+            host_id=host.id,
+            success=True
+        ).order_by(ScanResult.created_at.desc()).first()
+
+        if not latest_scan:
+            continue
+
+        update_summary['hosts_scanned'] += 1
+
+        # Parse pending updates
+        pending_count = 0
+        if latest_scan.pending_updates:
+            try:
+                if host.os_type == 'windows':
+                    pending_data = json.loads(latest_scan.pending_updates)
+                    pending_count = pending_data.get('PendingCount', 0)
+                else:
+                    pending_count = len([l for l in latest_scan.pending_updates.split('\n')
+                                       if l.strip() and l.startswith('Inst')])
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+        if pending_count > 0:
+            update_summary['hosts_need_updates'] += 1
+            update_summary['total_pending_updates'] += pending_count
+        else:
+            update_summary['hosts_up_to_date'] += 1
+
+        update_summary['by_host'].append({
+            'host_id': host.id,
+            'hostname': host.hostname,
+            'os_type': host.os_type,
+            'pending_count': pending_count,
+            'kernel_version': latest_scan.kernel_version,
+            'last_update_check': latest_scan.last_update_check,
+            'last_scan': latest_scan.created_at.isoformat()
+        })
+
+    # Sort by pending count descending
+    update_summary['by_host'].sort(key=lambda x: x['pending_count'], reverse=True)
+
+    return jsonify(update_summary)
+
+
+@api_bp.route('/summary/versions', methods=['GET'])
+@login_required
+def get_version_summary():
+    """Get a summary of OS and kernel versions across all hosts."""
+    hosts = Host.query.filter_by(user_id=current_user.id).all()
+
+    version_groups = {
+        'linux': {},
+        'windows': {}
+    }
+
+    for host in hosts:
+        latest_scan = ScanResult.query.filter_by(
+            host_id=host.id,
+            success=True
+        ).order_by(ScanResult.created_at.desc()).first()
+
+        if not latest_scan:
+            continue
+
+        # Parse snapshot
+        try:
+            snapshot = json.loads(latest_scan.system_snapshot) if latest_scan.system_snapshot else {}
+        except json.JSONDecodeError:
+            snapshot = {}
+
+        os_type = host.os_type
+        kernel = latest_scan.kernel_version or 'Unknown'
+        os_name = snapshot.get('os_pretty_name', 'Unknown')
+
+        # Group by kernel version
+        if kernel not in version_groups[os_type]:
+            version_groups[os_type][kernel] = {
+                'kernel_version': kernel,
+                'os_name': os_name,
+                'hosts': []
+            }
+
+        version_groups[os_type][kernel]['hosts'].append({
+            'host_id': host.id,
+            'hostname': host.hostname,
+            'os_version': snapshot.get('os_version', ''),
+            'build_number': snapshot.get('full_build') or snapshot.get('build_number', '')
+        })
+
+    return jsonify({
+        'generated_at': datetime.utcnow().isoformat(),
+        'linux_versions': list(version_groups['linux'].values()),
+        'windows_versions': list(version_groups['windows'].values()),
+        'linux_host_count': sum(len(v['hosts']) for v in version_groups['linux'].values()),
+        'windows_host_count': sum(len(v['hosts']) for v in version_groups['windows'].values())
     })
