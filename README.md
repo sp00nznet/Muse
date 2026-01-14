@@ -1,1 +1,3 @@
 # Muse
+
+This will be an observability app. It will be a containerized webserver. it will be accesible over the web. it will have persistant storage. It will have domain auth. This platform will be useful and grab metrics from another system. When a user puts in the hostname of a computer, the system will connect via ssh or winrdp and try to grab heirustics on the server to determine how its running. the tool will remotely access these systems. run though the list of running applications, users that are logged in, stuff in memory, state of operating system, event or hardware logs, The end user that is accessing the web server, they will be presented with an output of the server health listed per computer that is scannd. they will add hosts to be scanned. 
