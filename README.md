@@ -30,6 +30,8 @@
 | 🐧 **Linux Support** | Connect via SSH with password or key authentication |
 | 🪟 **Windows Support** | Connect via WinRM for Windows servers |
 | 🔐 **User Authentication** | Secure login with session management |
+| 🏢 **Domain Integration** | Connect to Active Directory for user authentication |
+| 🔑 **Service Accounts** | Centralized credential management for host connections |
 | 📊 **Dashboard** | Real-time overview of all monitored hosts |
 | 🔌 **REST API** | Full API for automation and integration |
 | 🐳 **Containerized** | Docker Compose for easy deployment |
@@ -159,6 +161,63 @@ Easily compare two or more servers side-by-side to identify differences:
 - **Update status comparison** - See which servers need patching
 - **Driver comparison** - Compare driver versions across Windows servers
 - **Automatic difference detection** - Highlights mismatches automatically
+
+---
+
+## 🔑 Service Accounts & Domain Integration
+
+Muse provides centralized credential management through service accounts and Active Directory integration.
+
+### Service Accounts
+
+Manage credentials centrally instead of storing them per-host:
+
+| Account Type | Description | Use Case |
+|--------------|-------------|----------|
+| `windows_domain` | Domain credentials for Windows | WinRM with domain authentication |
+| `linux_password` | Username/password for Linux | SSH password authentication |
+| `linux_key` | SSH key for Linux | SSH key-based authentication |
+
+**Features:**
+- Centralized credential storage with encryption
+- Assign one service account to multiple hosts
+- Test credentials before deployment
+- Set default accounts per OS type
+
+### Domain Controller Integration
+
+Connect Muse to your Active Directory for user authentication:
+
+```
+┌─────────────┐      LDAP/LDAPS      ┌─────────────────┐
+│    Muse     │ ◄──────────────────► │ Domain Controller│
+│   Web App   │                      │   (AD/LDAP)      │
+└─────────────┘                      └─────────────────┘
+       │
+       │ Users authenticate with
+       │ domain credentials
+       ▼
+  ┌──────────┐
+  │  Users   │
+  └──────────┘
+```
+
+**Features:**
+- Multiple domain controller support with failover
+- AD group-based access control (admin/user groups)
+- Auto-provisioning of domain users
+- Support for LDAP, LDAPS, and StartTLS
+- Test connections before enabling
+
+### Admin Panel Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET/POST /api/admin/service-accounts` | Manage service accounts |
+| `GET/POST /api/admin/domain-controllers` | Manage domain controllers |
+| `GET/PUT /api/admin/auth-settings` | Configure authentication |
+| `PUT /api/admin/hosts/{id}/service-account` | Assign service account to host |
+| `POST /api/admin/hosts/bulk-assign-service-account` | Bulk assign to multiple hosts |
 
 ---
 

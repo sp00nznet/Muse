@@ -10,9 +10,16 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
+    password_hash = db.Column(db.String(128), nullable=True)  # Nullable for domain-only users
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_admin = db.Column(db.Boolean, default=False)
+
+    # Domain authentication fields
+    is_domain_user = db.Column(db.Boolean, default=False)  # User authenticates via domain
+    domain_controller_id = db.Column(db.Integer, db.ForeignKey('domain_controllers.id'), nullable=True)
+    domain_username = db.Column(db.String(255), nullable=True)  # sAMAccountName or UPN
+    domain_user_dn = db.Column(db.String(500), nullable=True)  # Full DN from LDAP
+    last_domain_sync = db.Column(db.DateTime, nullable=True)  # Last time user info synced from AD
 
     hosts = db.relationship('Host', backref='owner', lazy=True)
 
@@ -23,10 +30,16 @@ class User(UserMixin, db.Model):
         ).decode('utf-8')
 
     def check_password(self, password):
+        if not self.password_hash:
+            return False
         return bcrypt.checkpw(
             password.encode('utf-8'),
             self.password_hash.encode('utf-8')
         )
+
+    def is_local_user(self):
+        """Check if user can authenticate locally."""
+        return not self.is_domain_user and self.password_hash is not None
 
 
 class Host(db.Model):
@@ -46,6 +59,10 @@ class Host(db.Model):
     status = db.Column(db.String(20), default='pending')  # pending, online, offline, error
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
+    # Service account for authentication (optional - overrides host-level credentials)
+    service_account_id = db.Column(db.Integer, db.ForeignKey('service_accounts.id'), nullable=True)
+    use_service_account = db.Column(db.Boolean, default=False)  # Use service account instead of host creds
+
     scans = db.relationship('ScanResult', backref='host', lazy=True, order_by='desc(ScanResult.created_at)')
     av_scans = db.relationship('AVScanResult', backref='host', lazy=True, order_by='desc(AVScanResult.created_at)')
 
@@ -57,7 +74,9 @@ class Host(db.Model):
             'os_type': self.os_type,
             'status': self.status,
             'last_scan': self.last_scan.isoformat() if self.last_scan else None,
-            'created_at': self.created_at.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'service_account_id': self.service_account_id,
+            'use_service_account': self.use_service_account
         }
 
 
@@ -196,4 +215,159 @@ class AVScanResult(db.Model):
             'threats_found': self.threats_found,
             'threat_details': self.threat_details,
             'scan_summary': self.scan_summary
+        }
+
+
+class ServiceAccount(db.Model):
+    """Service accounts used to connect to remote hosts."""
+    __tablename__ = 'service_accounts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    account_type = db.Column(db.String(20), nullable=False)  # windows_domain, linux_password, linux_key
+    is_default = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True)
+
+    # Windows Domain Credentials
+    domain = db.Column(db.String(255), nullable=True)  # e.g., CONTOSO.COM
+
+    # Common fields
+    username = db.Column(db.String(255), nullable=False)
+    password_encrypted = db.Column(db.Text, nullable=True)
+
+    # Linux SSH Key
+    ssh_key_encrypted = db.Column(db.Text, nullable=True)
+    ssh_key_passphrase_encrypted = db.Column(db.Text, nullable=True)
+
+    # Audit fields
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    # Relationships
+    hosts = db.relationship('Host', backref='service_account', lazy=True)
+
+    def to_dict(self, include_sensitive=False):
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'account_type': self.account_type,
+            'is_default': self.is_default,
+            'is_active': self.is_active,
+            'domain': self.domain,
+            'username': self.username,
+            'has_password': bool(self.password_encrypted),
+            'has_ssh_key': bool(self.ssh_key_encrypted),
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'host_count': len(self.hosts)
+        }
+        return data
+
+
+class DomainController(db.Model):
+    """Domain controllers for LDAP/AD user authentication."""
+    __tablename__ = 'domain_controllers'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)  # Friendly name
+    description = db.Column(db.Text, nullable=True)
+
+    # Connection settings
+    server_address = db.Column(db.String(255), nullable=False)  # IP or hostname
+    port = db.Column(db.Integer, default=389)  # 389 for LDAP, 636 for LDAPS
+    use_ssl = db.Column(db.Boolean, default=False)  # Use LDAPS
+    use_start_tls = db.Column(db.Boolean, default=False)  # Use StartTLS
+
+    # Domain settings
+    domain_name = db.Column(db.String(255), nullable=False)  # e.g., contoso.com
+    base_dn = db.Column(db.String(500), nullable=False)  # e.g., DC=contoso,DC=com
+    user_search_base = db.Column(db.String(500), nullable=True)  # e.g., OU=Users,DC=contoso,DC=com
+    user_search_filter = db.Column(db.String(500), default='(sAMAccountName={username})')
+
+    # Bind credentials (service account for LDAP queries)
+    bind_username = db.Column(db.String(255), nullable=False)  # e.g., svc_muse@contoso.com
+    bind_password_encrypted = db.Column(db.Text, nullable=False)
+
+    # Group mapping (optional - for role-based access)
+    admin_group_dn = db.Column(db.String(500), nullable=True)  # DN of group that gets admin rights
+    user_group_dn = db.Column(db.String(500), nullable=True)  # DN of group allowed to access
+
+    # Status
+    is_active = db.Column(db.Boolean, default=True)  # Is this DC used for authentication
+    is_primary = db.Column(db.Boolean, default=False)  # Primary DC (fallback order)
+    priority = db.Column(db.Integer, default=100)  # Lower = higher priority
+
+    # Connection status
+    last_connection_test = db.Column(db.DateTime, nullable=True)
+    last_connection_status = db.Column(db.String(20), nullable=True)  # success, failed
+    last_connection_error = db.Column(db.Text, nullable=True)
+
+    # Audit fields
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    def to_dict(self, include_sensitive=False):
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'server_address': self.server_address,
+            'port': self.port,
+            'use_ssl': self.use_ssl,
+            'use_start_tls': self.use_start_tls,
+            'domain_name': self.domain_name,
+            'base_dn': self.base_dn,
+            'user_search_base': self.user_search_base,
+            'user_search_filter': self.user_search_filter,
+            'bind_username': self.bind_username,
+            'admin_group_dn': self.admin_group_dn,
+            'user_group_dn': self.user_group_dn,
+            'is_active': self.is_active,
+            'is_primary': self.is_primary,
+            'priority': self.priority,
+            'last_connection_test': self.last_connection_test.isoformat() if self.last_connection_test else None,
+            'last_connection_status': self.last_connection_status,
+            'last_connection_error': self.last_connection_error,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+        return data
+
+
+class AuthSettings(db.Model):
+    """Global authentication settings."""
+    __tablename__ = 'auth_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Authentication modes
+    allow_local_auth = db.Column(db.Boolean, default=True)  # Allow local username/password
+    allow_domain_auth = db.Column(db.Boolean, default=False)  # Allow AD/LDAP authentication
+    require_domain_auth = db.Column(db.Boolean, default=False)  # Require domain auth (disable local)
+
+    # Auto-provisioning for domain users
+    auto_create_domain_users = db.Column(db.Boolean, default=True)  # Create user on first domain login
+    default_domain_user_admin = db.Column(db.Boolean, default=False)  # New domain users are admins
+
+    # Session settings
+    session_timeout_minutes = db.Column(db.Integer, default=480)  # 8 hours default
+
+    # Audit
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'allow_local_auth': self.allow_local_auth,
+            'allow_domain_auth': self.allow_domain_auth,
+            'require_domain_auth': self.require_domain_auth,
+            'auto_create_domain_users': self.auto_create_domain_users,
+            'default_domain_user_admin': self.default_domain_user_admin,
+            'session_timeout_minutes': self.session_timeout_minutes,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

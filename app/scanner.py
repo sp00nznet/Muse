@@ -3,8 +3,30 @@ import json
 from datetime import datetime
 import paramiko
 import winrm
+from cryptography.fernet import Fernet
+import os
 from app import db
-from app.models import Host, ScanResult
+from app.models import Host, ScanResult, ServiceAccount
+
+
+def get_encryption_key():
+    """Get encryption key for decrypting service account passwords."""
+    key = os.environ.get('MUSE_ENCRYPTION_KEY')
+    if not key:
+        key = Fernet.generate_key().decode()
+        os.environ['MUSE_ENCRYPTION_KEY'] = key
+    return key.encode() if isinstance(key, str) else key
+
+
+def decrypt_value(encrypted_value: str) -> str:
+    """Decrypt a sensitive value."""
+    if not encrypted_value:
+        return None
+    try:
+        f = Fernet(get_encryption_key())
+        return f.decrypt(encrypted_value.encode()).decode()
+    except Exception:
+        return encrypted_value  # Return as-is if not encrypted
 
 
 class RemoteScanner:
@@ -12,8 +34,34 @@ class RemoteScanner:
 
     def __init__(self, host: Host, password: str = None):
         self.host = host
-        self.password = password or host.password_encrypted
         self.result = ScanResult(host_id=host.id)
+
+        # Determine credentials to use
+        self.username = None
+        self.password = None
+        self.ssh_key = None
+        self.ssh_key_passphrase = None
+        self.domain = None
+
+        # Check if host uses a service account
+        if host.use_service_account and host.service_account_id:
+            service_account = ServiceAccount.query.get(host.service_account_id)
+            if service_account and service_account.is_active:
+                self.username = service_account.username
+                self.password = decrypt_value(service_account.password_encrypted)
+                self.ssh_key = decrypt_value(service_account.ssh_key_encrypted)
+                self.ssh_key_passphrase = decrypt_value(service_account.ssh_key_passphrase_encrypted)
+                self.domain = service_account.domain
+            else:
+                # Fall back to host credentials if service account is invalid
+                self.username = host.username
+                self.password = password or host.password_encrypted
+                self.ssh_key = host.ssh_key
+        else:
+            # Use host-level credentials
+            self.username = host.username
+            self.password = password or host.password_encrypted
+            self.ssh_key = host.ssh_key
 
     def scan(self) -> ScanResult:
         """Execute scan based on OS type."""
@@ -42,13 +90,31 @@ class RemoteScanner:
         connect_kwargs = {
             'hostname': self.host.ip_address or self.host.hostname,
             'port': self.host.ssh_port,
-            'username': self.host.username,
+            'username': self.username,
             'timeout': 30
         }
 
-        if self.host.ssh_key:
-            key_file = io.StringIO(self.host.ssh_key)
-            private_key = paramiko.RSAKey.from_private_key(key_file)
+        if self.ssh_key:
+            key_file = io.StringIO(self.ssh_key)
+            try:
+                private_key = paramiko.RSAKey.from_private_key(
+                    key_file,
+                    password=self.ssh_key_passphrase
+                )
+            except paramiko.ssh_exception.SSHException:
+                # Try other key types
+                key_file.seek(0)
+                try:
+                    private_key = paramiko.Ed25519Key.from_private_key(
+                        key_file,
+                        password=self.ssh_key_passphrase
+                    )
+                except paramiko.ssh_exception.SSHException:
+                    key_file.seek(0)
+                    private_key = paramiko.ECDSAKey.from_private_key(
+                        key_file,
+                        password=self.ssh_key_passphrase
+                    )
             connect_kwargs['pkey'] = private_key
         elif self.password:
             connect_kwargs['password'] = self.password
@@ -350,9 +416,15 @@ class RemoteScanner:
 
     def _scan_windows(self):
         """Scan Windows host via WinRM."""
+        # Build username - include domain if using domain credentials
+        if self.domain:
+            auth_username = f"{self.domain}\\{self.username}"
+        else:
+            auth_username = self.username
+
         session = winrm.Session(
             f'http://{self.host.ip_address or self.host.hostname}:{self.host.winrm_port}/wsman',
-            auth=(self.host.username, self.password),
+            auth=(auth_username, self.password),
             transport='ntlm'
         )
 

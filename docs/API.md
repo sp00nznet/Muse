@@ -1259,6 +1259,470 @@ GET /api/summary/versions
 
 ---
 
+## 🔐 Admin Panel - Service Accounts (Admin Only)
+
+Service accounts allow centralized credential management for connecting to hosts.
+
+### List Service Accounts
+
+```http
+GET /api/admin/service-accounts
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Linux Production",
+    "description": "Service account for production Linux servers",
+    "account_type": "linux_key",
+    "is_default": true,
+    "is_active": true,
+    "domain": null,
+    "username": "svc_muse",
+    "has_password": false,
+    "has_ssh_key": true,
+    "created_at": "2024-01-15T10:00:00",
+    "host_count": 15
+  },
+  {
+    "id": 2,
+    "name": "Windows Domain",
+    "description": "Domain service account for Windows servers",
+    "account_type": "windows_domain",
+    "is_default": true,
+    "is_active": true,
+    "domain": "CONTOSO.COM",
+    "username": "svc_muse",
+    "has_password": true,
+    "has_ssh_key": false,
+    "created_at": "2024-01-15T10:00:00",
+    "host_count": 10
+  }
+]
+```
+
+---
+
+### Create Service Account
+
+```http
+POST /api/admin/service-accounts
+Content-Type: application/json
+```
+
+**Request Body (Windows Domain):**
+```json
+{
+  "name": "Windows Production",
+  "description": "Domain account for Windows servers",
+  "account_type": "windows_domain",
+  "domain": "CONTOSO.COM",
+  "username": "svc_muse",
+  "password": "SecurePassword123!",
+  "is_default": true,
+  "is_active": true
+}
+```
+
+**Request Body (Linux Password):**
+```json
+{
+  "name": "Linux Production",
+  "account_type": "linux_password",
+  "username": "svc_muse",
+  "password": "SecurePassword123!",
+  "is_default": false
+}
+```
+
+**Request Body (Linux SSH Key):**
+```json
+{
+  "name": "Linux SSH Key",
+  "account_type": "linux_key",
+  "username": "svc_muse",
+  "ssh_key": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
+  "ssh_key_passphrase": "optional_passphrase",
+  "is_default": true
+}
+```
+
+**Account Types:**
+- `windows_domain` - Windows domain credentials (requires domain, username, password)
+- `linux_password` - Linux username/password (requires username, password)
+- `linux_key` - Linux SSH key authentication (requires username, ssh_key)
+
+**Response:** `201 Created` with service account object
+
+---
+
+### Update Service Account
+
+```http
+PUT /api/admin/service-accounts/{id}
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "name": "Updated Name",
+  "description": "Updated description",
+  "is_active": true,
+  "password": "NewPassword123!"
+}
+```
+
+**Response:** `200 OK` with updated service account object
+
+---
+
+### Delete Service Account
+
+```http
+DELETE /api/admin/service-accounts/{id}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "message": "Service account deleted successfully"
+}
+```
+
+> ⚠️ Cannot delete if hosts are assigned to this service account.
+
+---
+
+### Test Service Account
+
+```http
+POST /api/admin/service-accounts/{id}/test
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "test_host": "192.168.1.100"
+}
+```
+
+**Response:**
+```json
+{
+  "account_id": 1,
+  "account_name": "Linux Production",
+  "account_type": "linux_key",
+  "test_time": "2024-01-15T12:00:00",
+  "success": true,
+  "message": "Successfully connected to 192.168.1.100",
+  "hostname": "web-server-01"
+}
+```
+
+---
+
+## 🏢 Admin Panel - Domain Controllers (Admin Only)
+
+Configure Active Directory/LDAP domain controllers for user authentication.
+
+### List Domain Controllers
+
+```http
+GET /api/admin/domain-controllers
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Primary DC",
+    "description": "Main domain controller",
+    "server_address": "dc01.contoso.com",
+    "port": 389,
+    "use_ssl": false,
+    "use_start_tls": true,
+    "domain_name": "contoso.com",
+    "base_dn": "DC=contoso,DC=com",
+    "user_search_base": "OU=Users,DC=contoso,DC=com",
+    "user_search_filter": "(sAMAccountName={username})",
+    "bind_username": "svc_muse@contoso.com",
+    "admin_group_dn": "CN=Muse Admins,OU=Groups,DC=contoso,DC=com",
+    "user_group_dn": "CN=Muse Users,OU=Groups,DC=contoso,DC=com",
+    "is_active": true,
+    "is_primary": true,
+    "priority": 100,
+    "last_connection_test": "2024-01-15T11:00:00",
+    "last_connection_status": "success",
+    "created_at": "2024-01-15T10:00:00"
+  }
+]
+```
+
+---
+
+### Create Domain Controller
+
+```http
+POST /api/admin/domain-controllers
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "name": "Primary DC",
+  "description": "Main domain controller",
+  "server_address": "dc01.contoso.com",
+  "port": 389,
+  "use_ssl": false,
+  "use_start_tls": true,
+  "domain_name": "contoso.com",
+  "base_dn": "DC=contoso,DC=com",
+  "user_search_base": "OU=Users,DC=contoso,DC=com",
+  "user_search_filter": "(sAMAccountName={username})",
+  "bind_username": "svc_muse@contoso.com",
+  "bind_password": "ServiceAccountPassword!",
+  "admin_group_dn": "CN=Muse Admins,OU=Groups,DC=contoso,DC=com",
+  "user_group_dn": "CN=Muse Users,OU=Groups,DC=contoso,DC=com",
+  "is_active": true,
+  "is_primary": true,
+  "priority": 100
+}
+```
+
+**Response:** `201 Created` with domain controller object
+
+---
+
+### Update Domain Controller
+
+```http
+PUT /api/admin/domain-controllers/{id}
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "server_address": "dc02.contoso.com",
+  "is_primary": true,
+  "bind_password": "NewServicePassword!"
+}
+```
+
+**Response:** `200 OK` with updated domain controller object
+
+---
+
+### Rename Domain Controller
+
+```http
+PUT /api/admin/domain-controllers/{id}/rename
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "name": "Backup DC"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Domain controller renamed successfully",
+  "old_name": "Primary DC",
+  "new_name": "Backup DC"
+}
+```
+
+---
+
+### Delete Domain Controller
+
+```http
+DELETE /api/admin/domain-controllers/{id}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "message": "Domain controller deleted successfully"
+}
+```
+
+> ⚠️ Cannot delete if users are authenticated via this domain controller.
+
+---
+
+### Test Domain Controller Connection
+
+```http
+POST /api/admin/domain-controllers/{id}/test
+Content-Type: application/json
+```
+
+**Request Body (Optional - test user authentication):**
+```json
+{
+  "test_username": "john.doe",
+  "test_password": "UserPassword123!"
+}
+```
+
+**Response:**
+```json
+{
+  "dc_id": 1,
+  "dc_name": "Primary DC",
+  "server_address": "dc01.contoso.com",
+  "test_time": "2024-01-15T12:00:00",
+  "connection_test": {
+    "success": true,
+    "message": "Successfully reached dc01.contoso.com:389"
+  },
+  "bind_test": {
+    "success": true,
+    "message": "Successfully bound as svc_muse@contoso.com"
+  },
+  "user_test": {
+    "success": true,
+    "message": "User john.doe authenticated successfully",
+    "user_dn": "CN=John Doe,OU=Users,DC=contoso,DC=com",
+    "is_admin": false
+  },
+  "server_info": {
+    "vendor": "Microsoft",
+    "supported_controls": 42
+  }
+}
+```
+
+---
+
+## ⚙️ Admin Panel - Authentication Settings (Admin Only)
+
+Configure global authentication settings.
+
+### Get Authentication Settings
+
+```http
+GET /api/admin/auth-settings
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "allow_local_auth": true,
+  "allow_domain_auth": true,
+  "require_domain_auth": false,
+  "auto_create_domain_users": true,
+  "default_domain_user_admin": false,
+  "session_timeout_minutes": 480,
+  "updated_at": "2024-01-15T10:00:00",
+  "active_domain_controllers": 2
+}
+```
+
+---
+
+### Update Authentication Settings
+
+```http
+PUT /api/admin/auth-settings
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "allow_local_auth": true,
+  "allow_domain_auth": true,
+  "require_domain_auth": false,
+  "auto_create_domain_users": true,
+  "default_domain_user_admin": false,
+  "session_timeout_minutes": 480
+}
+```
+
+**Response:** `200 OK` with updated settings
+
+---
+
+## 🔗 Admin Panel - Host Service Account Assignment (Admin Only)
+
+### Assign Service Account to Host
+
+```http
+PUT /api/admin/hosts/{host_id}/service-account
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "service_account_id": 1,
+  "use_service_account": true
+}
+```
+
+**To remove assignment:**
+```json
+{
+  "service_account_id": null
+}
+```
+
+**Response:**
+```json
+{
+  "host_id": 1,
+  "hostname": "web-server-01",
+  "service_account_id": 1,
+  "use_service_account": true
+}
+```
+
+---
+
+### Bulk Assign Service Account
+
+```http
+POST /api/admin/hosts/bulk-assign-service-account
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "host_ids": [1, 2, 3, 4, 5],
+  "service_account_id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "total": 5,
+  "successful": 4,
+  "failed": 1,
+  "results": [
+    {"host_id": 1, "hostname": "web-01", "success": true},
+    {"host_id": 2, "hostname": "web-02", "success": true},
+    {"host_id": 3, "success": false, "error": "Windows host requires windows_domain account"}
+  ]
+}
+```
+
+---
+
 ## ❌ Error Responses
 
 All endpoints return errors in this format:
