@@ -23,6 +23,10 @@
 |---------|-------------|
 | 🖥️ **Health Monitoring** | CPU, memory, disk, processes, uptime, and more |
 | 🦠 **Antivirus Scanning** | Integrated ClamAV for remote malware detection |
+| 🔄 **Update Tracking** | Windows Update & APT/YUM package update status |
+| 🔧 **Driver Management** | View installed drivers and available updates |
+| 🔀 **Server Comparison** | Compare multiple servers side-by-side |
+| 📋 **At-a-Glance Summaries** | Quick overview of all hosts with health indicators |
 | 🐧 **Linux Support** | Connect via SSH with password or key authentication |
 | 🪟 **Windows Support** | Connect via WinRM for Windows servers |
 | 🔐 **User Authentication** | Secure login with session management |
@@ -92,6 +96,29 @@ docker-compose up -d
 | Network Interfaces | ✅ | ✅ |
 | System Logs | ✅ | ✅ |
 
+### 🔄 Update & Driver Information
+
+| Metric | Linux | Windows |
+|--------|:-----:|:-------:|
+| Pending Updates | ✅ APT/YUM/DNF | ✅ Windows Update |
+| Update History | ✅ | ✅ |
+| Last Update Check | ✅ | ✅ |
+| Installed Drivers | ✅ Kernel modules | ✅ PnP drivers |
+| Driver Updates Available | ✅ fwupd | ✅ Windows Update |
+| Kernel/Build Version | ✅ | ✅ |
+| OS Build Info | ✅ | ✅ |
+| Installed Packages | ✅ | ✅ Features/Roles |
+
+### 📊 Event Log Analysis
+
+| Event Type | Linux | Windows |
+|------------|:-----:|:-------:|
+| Security Events | ✅ journalctl/auth.log | ✅ Security Event Log |
+| System Events | ✅ Service changes, reboots | ✅ System Event Log |
+| Application Errors | ✅ | ✅ Application Event Log |
+| Hardware Events | ✅ dmesg | ✅ Hardware logs |
+| Critical Errors | ✅ | ✅ |
+
 ### 🦠 Antivirus Scan
 
 | Scan Type | Description |
@@ -99,6 +126,39 @@ docker-compose up -d
 | **Quick** | Common malware locations (`/tmp`, `/home`, `C:\Users`) |
 | **Full** | Comprehensive scan including application directories |
 | **Custom** | User-defined paths |
+
+---
+
+## 🔀 Server Comparison
+
+Easily compare two or more servers side-by-side to identify differences:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  Compare: web-server-01 vs web-server-02                               │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  Metric              web-server-01        web-server-02      Match?    │
+│  ────────────────────────────────────────────────────────────────────  │
+│  OS Version          Ubuntu 22.04         Ubuntu 22.04       ✅        │
+│  Kernel              5.15.0-91-generic    5.15.0-89-generic  ⚠️        │
+│  CPU Usage           23.5%                45.2%              ✅        │
+│  Memory              45.2%                78.3%              ⚠️        │
+│  Pending Updates     5                    23                 ❌        │
+│  Event Errors (24h)  2                    15                 ⚠️        │
+│                                                                        │
+│  ⚠️ Differences detected: kernel_version, pending_updates             │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Comparison Features
+
+- **Side-by-side host comparison** - Compare OS, kernel, build info
+- **Event log comparison** - Check if servers have similar error patterns
+- **Update status comparison** - See which servers need patching
+- **Driver comparison** - Compare driver versions across Windows servers
+- **Automatic difference detection** - Highlights mismatches automatically
 
 ---
 

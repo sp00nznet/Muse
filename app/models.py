@@ -105,6 +105,23 @@ class ScanResult(db.Model):
     # Network
     network_info = db.Column(db.Text, nullable=True)
 
+    # System Updates & Package Info
+    pending_updates = db.Column(db.Text, nullable=True)       # Available updates not yet installed
+    update_history = db.Column(db.Text, nullable=True)        # Recent update/patch history
+    last_update_check = db.Column(db.Text, nullable=True)     # When updates were last checked
+
+    # Driver Information
+    driver_info = db.Column(db.Text, nullable=True)           # Installed drivers and versions
+    driver_updates = db.Column(db.Text, nullable=True)        # Available driver updates
+
+    # Build & Version Info
+    build_info = db.Column(db.Text, nullable=True)            # Detailed OS build info
+    kernel_version = db.Column(db.String(255), nullable=True) # Kernel/NT version
+    installed_packages = db.Column(db.Text, nullable=True)    # Key installed packages/features
+
+    # System Snapshot for Comparison
+    system_snapshot = db.Column(db.Text, nullable=True)       # JSON snapshot for easy comparison
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -132,7 +149,16 @@ class ScanResult(db.Model):
             'cbs_logs': self.cbs_logs,
             'recent_changes': self.recent_changes,
             'event_summary': self.event_summary,
-            'network_info': self.network_info
+            'network_info': self.network_info,
+            'pending_updates': self.pending_updates,
+            'update_history': self.update_history,
+            'last_update_check': self.last_update_check,
+            'driver_info': self.driver_info,
+            'driver_updates': self.driver_updates,
+            'build_info': self.build_info,
+            'kernel_version': self.kernel_version,
+            'installed_packages': self.installed_packages,
+            'system_snapshot': self.system_snapshot
         }
 
 
