@@ -8,6 +8,7 @@ services:
     environment:
       - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
       - DATABASE_URL=postgresql://muse:muse@db:5432/muse
+      - MUSE_ENCRYPTION_KEY=${MUSE_ENCRYPTION_KEY:-}
       - CLAMAV_HOST=clamav
       - CLAMAV_PORT=3310
     depends_on:
@@ -29,9 +30,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U muse -d muse"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
     networks:
       - muse-network
