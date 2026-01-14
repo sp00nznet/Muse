@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Edit Host{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 1.5rem;">Edit Host: {{ host.hostname }}</h1>
+
+<div class="card" style="max-width: 600px;">
+    <form method="POST">
+        {{ form.hidden_tag() }}
+
+        <div class="form-group">
+            <label class="form-label" for="hostname">Hostname *</label>
+            {{ form.hostname(class="form-control") }}
+            {% for error in form.hostname.errors %}
+                <small style="color: var(--danger);">{{ error }}</small>
+            {% endfor %}
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ip_address">IP Address</label>
+            {{ form.ip_address(class="form-control") }}
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="os_type">Operating System</label>
+            {{ form.os_type(class="form-control") }}
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label class="form-label" for="ssh_port">SSH Port</label>
+                {{ form.ssh_port(class="form-control") }}
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="winrm_port">WinRM Port</label>
+                {{ form.winrm_port(class="form-control") }}
+            </div>
+        </div>
+
+        <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--gray-200);">
+
+        <h3 style="margin-bottom: 1rem; font-size: 1rem;">Authentication</h3>
+
+        <div class="form-group">
+            <label class="form-label" for="username">Username</label>
+            {{ form.username(class="form-control") }}
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="password">Password</label>
+            {{ form.password(class="form-control", placeholder="Leave blank to keep existing password") }}
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ssh_key">SSH Private Key</label>
+            {{ form.ssh_key(class="form-control", placeholder="Leave blank to keep existing key") }}
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="{{ url_for('main.host_detail', host_id=host.id) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
