@@ -12,11 +12,11 @@ All API endpoints require authentication. Use session-based auth by logging in v
 
 ```bash
 # Get CSRF token and session cookie
-curl -c cookies.txt http://localhost:5000/auth/login
+curl -c cookies.txt http://localhost:5050/auth/login
 
 # Login (use CSRF token from form)
 curl -b cookies.txt -c cookies.txt \
-  -X POST http://localhost:5000/auth/login \
+  -X POST http://localhost:5050/auth/login \
   -d "username=admin&password=secret&csrf_token=TOKEN"
 ```
 
@@ -1289,12 +1289,12 @@ All endpoints return errors in this format:
 ```bash
 # Login and save cookies
 curl -c cookies.txt -b cookies.txt \
-  -X POST http://localhost:5000/auth/login \
+  -X POST http://localhost:5050/auth/login \
   -d "username=admin&password=secret"
 
 # Create host
 curl -b cookies.txt \
-  -X POST http://localhost:5000/api/hosts \
+  -X POST http://localhost:5050/api/hosts \
   -H "Content-Type: application/json" \
   -d '{
     "hostname": "my-server",
@@ -1306,11 +1306,11 @@ curl -b cookies.txt \
 
 # Run health scan
 curl -b cookies.txt \
-  -X POST http://localhost:5000/api/hosts/1/scan
+  -X POST http://localhost:5050/api/hosts/1/scan
 
 # Run AV scan
 curl -b cookies.txt \
-  -X POST http://localhost:5000/api/hosts/1/av-scan \
+  -X POST http://localhost:5050/api/hosts/1/av-scan \
   -H "Content-Type: application/json" \
   -d '{"scan_type": "full"}'
 ```
@@ -1324,7 +1324,7 @@ import requests
 
 # Create session
 session = requests.Session()
-base_url = "http://localhost:5000"
+base_url = "http://localhost:5050"
 
 # Login
 session.post(f"{base_url}/auth/login", data={

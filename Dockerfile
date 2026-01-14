@@ -20,11 +20,11 @@ RUN useradd -m -r muse && chown -R muse:muse /app
 USER muse
 
 # Expose the application port
-EXPOSE 5000
+EXPOSE 5050
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5050/')" || exit 1
 
 # Run with gunicorn in production
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--threads", "2", "run:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "4", "--threads", "2", "run:app"]

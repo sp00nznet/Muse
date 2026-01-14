@@ -51,7 +51,7 @@ cd muse
 docker-compose up -d
 ```
 
-🌐 Open **http://localhost:5000** and create your first account!
+🌐 Open **http://localhost:5050** and create your first account!
 
 > 💡 The first registered user automatically becomes an admin.
 
@@ -168,7 +168,7 @@ Easily compare two or more servers side-by-side to identify differences:
                     ┌─────────────────┐
                     │   Web Browser   │
                     └────────┬────────┘
-                             │ HTTP :5000
+                             │ HTTP :5050
                     ┌────────▼────────┐
                     │   Muse Web App  │
                     │    (Flask)      │

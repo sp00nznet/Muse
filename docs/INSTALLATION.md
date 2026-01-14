@@ -55,12 +55,12 @@ docker-compose ps
 
 # Expected output:
 # NAME                STATUS              PORTS
-# muse-web-1          running             0.0.0.0:5000->5000/tcp
+# muse-web-1          running             0.0.0.0:5050->5050/tcp
 # muse-db-1           running (healthy)   5432/tcp
 # muse-clamav-1       running (healthy)   3310/tcp
 ```
 
-🎉 **Done!** Visit http://localhost:5000
+🎉 **Done!** Visit http://localhost:5050
 
 ---
 
@@ -138,7 +138,7 @@ export CLAMAV_PORT="3310"
 python run.py
 
 # Production
-gunicorn --bind 0.0.0.0:5000 --workers 4 run:app
+gunicorn --bind 0.0.0.0:5050 --workers 4 run:app
 ```
 
 ---
@@ -150,7 +150,7 @@ gunicorn --bind 0.0.0.0:5000 --workers 4 run:app
 1. Launch an EC2 instance (t3.medium or larger)
 2. Install Docker and Docker Compose
 3. Clone repo and run `docker-compose up -d`
-4. Configure Security Group to allow port 5000
+4. Configure Security Group to allow port 5050
 
 ### DigitalOcean
 
@@ -199,7 +199,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/muse.yourdomain.com/privkey.pem;
 
     location / {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:5050;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -259,12 +259,12 @@ docker-compose exec db psql -U muse -d muse -c "SELECT 1"
 ### Port Already in Use
 
 ```bash
-# Find process using port 5000
-lsof -i :5000
+# Find process using port 5050
+lsof -i :5050
 
 # Change port in docker-compose.yml
 ports:
-  - "8080:5000"  # Use port 8080 instead
+  - "8080:5050"  # Use port 8080 instead
 ```
 
 ---
