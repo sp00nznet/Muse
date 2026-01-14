@@ -22,5 +22,9 @@ bcrypt==4.1.1
 apscheduler==3.10.4
 requests==2.31.0
 
+# LDAP/Active Directory
+ldap3==2.9.1
+cryptography==41.0.7
+
 # Production Server
 gunicorn==21.2.0

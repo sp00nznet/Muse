@@ -30,6 +30,9 @@
 | 🐧 **Linux Support** | Connect via SSH with password or key authentication |
 | 🪟 **Windows Support** | Connect via WinRM for Windows servers |
 | 🔐 **User Authentication** | Secure login with session management |
+| 🏢 **Domain Integration** | Connect to Active Directory for user authentication |
+| 🔑 **Service Accounts** | Centralized credential management for host connections |
+| 🐕 **Datadog Integration** | Pull and display host information from Datadog |
 | 📊 **Dashboard** | Real-time overview of all monitored hosts |
 | 🔌 **REST API** | Full API for automation and integration |
 | 🐳 **Containerized** | Docker Compose for easy deployment |
@@ -51,7 +54,7 @@ cd muse
 docker-compose up -d
 ```
 
-🌐 Open **http://localhost:5000** and create your first account!
+🌐 Open **http://localhost:5050** and create your first account!
 
 > 💡 The first registered user automatically becomes an admin.
 
@@ -162,13 +165,106 @@ Easily compare two or more servers side-by-side to identify differences:
 
 ---
 
+## 🔑 Service Accounts & Domain Integration
+
+Muse provides centralized credential management through service accounts and Active Directory integration.
+
+### Service Accounts
+
+Manage credentials centrally instead of storing them per-host:
+
+| Account Type | Description | Use Case |
+|--------------|-------------|----------|
+| `windows_domain` | Domain credentials for Windows | WinRM with domain authentication |
+| `linux_password` | Username/password for Linux | SSH password authentication |
+| `linux_key` | SSH key for Linux | SSH key-based authentication |
+
+**Features:**
+- Centralized credential storage with encryption
+- Assign one service account to multiple hosts
+- Test credentials before deployment
+- Set default accounts per OS type
+
+### Domain Controller Integration
+
+Connect Muse to your Active Directory for user authentication:
+
+```
+┌─────────────┐      LDAP/LDAPS      ┌─────────────────┐
+│    Muse     │ ◄──────────────────► │ Domain Controller│
+│   Web App   │                      │   (AD/LDAP)      │
+└─────────────┘                      └─────────────────┘
+       │
+       │ Users authenticate with
+       │ domain credentials
+       ▼
+  ┌──────────┐
+  │  Users   │
+  └──────────┘
+```
+
+**Features:**
+- Multiple domain controller support with failover
+- AD group-based access control (admin/user groups)
+- Auto-provisioning of domain users
+- Support for LDAP, LDAPS, and StartTLS
+- Test connections before enabling
+
+### Admin Panel Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET/POST /api/admin/service-accounts` | Manage service accounts |
+| `GET/POST /api/admin/domain-controllers` | Manage domain controllers |
+| `GET/PUT /api/admin/auth-settings` | Configure authentication |
+| `PUT /api/admin/hosts/{id}/service-account` | Assign service account to host |
+| `POST /api/admin/hosts/bulk-assign-service-account` | Bulk assign to multiple hosts |
+| `GET/POST /api/admin/datadog/integrations` | Manage Datadog integrations |
+| `POST /api/admin/datadog/integrations/{id}/sync` | Sync hosts from Datadog |
+
+---
+
+## 🐕 Datadog Integration
+
+Muse can pull host information from your Datadog account and display it alongside your directly-managed hosts.
+
+### Features
+
+- **Multi-account support** - Connect multiple Datadog accounts
+- **Automatic sync** - Configurable sync intervals (default 15 min)
+- **Host filtering** - Use Datadog query syntax to filter hosts
+- **Cloud provider detection** - AWS, Azure, GCP metadata extraction
+- **Link to Muse hosts** - Associate Datadog hosts with Muse-managed hosts
+
+### Supported Datadog Sites
+
+| Site | Region |
+|------|--------|
+| `datadoghq.com` | US1 (default) |
+| `datadoghq.eu` | EU |
+| `us3.datadoghq.com` | US3 |
+| `us5.datadoghq.com` | US5 |
+| `ap1.datadoghq.com` | AP1 |
+| `ddog-gov.com` | US1-FED |
+
+### User Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/datadog/hosts` | List Datadog hosts with filtering |
+| `GET /api/datadog/hosts/{id}` | Get host details |
+| `GET /api/datadog/summary` | Get summary statistics |
+| `POST /api/datadog/hosts/{id}/link` | Link to Muse host |
+
+---
+
 ## 🏗️ Architecture
 
 ```
                     ┌─────────────────┐
                     │   Web Browser   │
                     └────────┬────────┘
-                             │ HTTP :5000
+                             │ HTTP :5050
                     ┌────────▼────────┐
                     │   Muse Web App  │
                     │    (Flask)      │

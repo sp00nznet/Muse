@@ -1595,3 +1595,314 @@ def get_version_summary():
         'linux_host_count': sum(len(v['hosts']) for v in version_groups['linux'].values()),
         'windows_host_count': sum(len(v['hosts']) for v in version_groups['windows'].values())
     })
+
+
+# =============================================================================
+# DATADOG HOST DATA ENDPOINTS (User-facing)
+# =============================================================================
+
+@api_bp.route('/datadog/hosts', methods=['GET'])
+@login_required
+def get_datadog_hosts():
+    """
+    Get all Datadog hosts from active integrations.
+
+    Query parameters:
+    - integration_id: Filter by specific integration
+    - search: Search hosts by name
+    - up: Filter by status (true/false)
+    - cloud_provider: Filter by cloud provider (aws, azure, gcp)
+    - tag: Filter by tag (can be specified multiple times)
+    - page: Page number (default 1)
+    - per_page: Items per page (default 50, max 200)
+    """
+    from app.models import DatadogHostCache, DatadogIntegration
+
+    # Check if any integrations are active
+    active_integrations = DatadogIntegration.query.filter_by(is_active=True).count()
+    if active_integrations == 0:
+        return jsonify({
+            'hosts': [],
+            'total': 0,
+            'message': 'No active Datadog integrations configured'
+        })
+
+    # Build query
+    query = DatadogHostCache.query.join(
+        DatadogIntegration,
+        DatadogHostCache.integration_id == DatadogIntegration.id
+    ).filter(DatadogIntegration.is_active == True)
+
+    # Filter by integration
+    integration_id = request.args.get('integration_id', type=int)
+    if integration_id:
+        query = query.filter(DatadogHostCache.integration_id == integration_id)
+
+    # Search by host name
+    search = request.args.get('search')
+    if search:
+        query = query.filter(DatadogHostCache.host_name.ilike(f'%{search}%'))
+
+    # Filter by status
+    up_filter = request.args.get('up')
+    if up_filter is not None:
+        is_up = up_filter.lower() in ('true', '1', 'yes')
+        query = query.filter(DatadogHostCache.up == is_up)
+
+    # Filter by cloud provider
+    cloud_provider = request.args.get('cloud_provider')
+    if cloud_provider:
+        query = query.filter(DatadogHostCache.cloud_provider == cloud_provider)
+
+    # Filter by tag
+    tags = request.args.getlist('tag')
+    if tags:
+        for tag in tags:
+            query = query.filter(DatadogHostCache.tags.ilike(f'%{tag}%'))
+
+    # Pagination
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 200)
+
+    # Get total count
+    total = query.count()
+
+    # Get paginated results
+    hosts = query.order_by(DatadogHostCache.host_name).offset(
+        (page - 1) * per_page
+    ).limit(per_page).all()
+
+    return jsonify({
+        'hosts': [h.to_dict() for h in hosts],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'pages': (total + per_page - 1) // per_page
+    })
+
+
+@api_bp.route('/datadog/hosts/<int:host_id>', methods=['GET'])
+@login_required
+def get_datadog_host(host_id):
+    """Get details for a specific Datadog host."""
+    from app.models import DatadogHostCache, DatadogIntegration
+    import json
+
+    host = DatadogHostCache.query.get(host_id)
+    if not host:
+        return jsonify({'error': 'Datadog host not found'}), 404
+
+    # Get integration info
+    integration = DatadogIntegration.query.get(host.integration_id)
+
+    # Build detailed response
+    response = host.to_dict()
+    response['integration_name'] = integration.name if integration else None
+
+    # Include full metadata if available
+    if host.meta:
+        try:
+            response['metadata'] = json.loads(host.meta)
+        except json.JSONDecodeError:
+            pass
+
+    # Include agent checks if available
+    if host.agent_checks:
+        try:
+            response['agent_checks'] = json.loads(host.agent_checks)
+        except json.JSONDecodeError:
+            pass
+
+    return jsonify(response)
+
+
+@api_bp.route('/datadog/hosts/<int:host_id>/link', methods=['POST'])
+@login_required
+def link_datadog_host_to_muse(host_id):
+    """Link a Datadog host to a Muse host for combined view."""
+    from app.models import DatadogHostCache, Host
+
+    dd_host = DatadogHostCache.query.get(host_id)
+    if not dd_host:
+        return jsonify({'error': 'Datadog host not found'}), 404
+
+    data = request.get_json()
+
+    if 'muse_host_id' not in data:
+        return jsonify({'error': 'muse_host_id is required (use null to unlink)'}), 400
+
+    muse_host_id = data['muse_host_id']
+
+    if muse_host_id is not None:
+        muse_host = Host.query.get(muse_host_id)
+        if not muse_host:
+            return jsonify({'error': 'Muse host not found'}), 404
+
+    dd_host.muse_host_id = muse_host_id
+    db.session.commit()
+
+    return jsonify({
+        'datadog_host_id': dd_host.id,
+        'datadog_host_name': dd_host.host_name,
+        'muse_host_id': dd_host.muse_host_id,
+        'message': 'Link updated successfully'
+    })
+
+
+@api_bp.route('/datadog/summary', methods=['GET'])
+@login_required
+def get_datadog_summary():
+    """Get summary statistics for all Datadog hosts."""
+    from app.models import DatadogHostCache, DatadogIntegration
+    from sqlalchemy import func
+
+    # Check for active integrations
+    integrations = DatadogIntegration.query.filter_by(is_active=True).all()
+
+    if not integrations:
+        return jsonify({
+            'integrations': [],
+            'total_hosts': 0,
+            'hosts_up': 0,
+            'hosts_down': 0,
+            'message': 'No active Datadog integrations'
+        })
+
+    # Get counts
+    total_hosts = DatadogHostCache.query.join(
+        DatadogIntegration
+    ).filter(DatadogIntegration.is_active == True).count()
+
+    hosts_up = DatadogHostCache.query.join(
+        DatadogIntegration
+    ).filter(
+        DatadogIntegration.is_active == True,
+        DatadogHostCache.up == True
+    ).count()
+
+    # Get cloud provider breakdown
+    cloud_counts = db.session.query(
+        DatadogHostCache.cloud_provider,
+        func.count(DatadogHostCache.id)
+    ).join(DatadogIntegration).filter(
+        DatadogIntegration.is_active == True,
+        DatadogHostCache.cloud_provider.isnot(None)
+    ).group_by(DatadogHostCache.cloud_provider).all()
+
+    # Get OS breakdown
+    os_counts = db.session.query(
+        DatadogHostCache.platform,
+        func.count(DatadogHostCache.id)
+    ).join(DatadogIntegration).filter(
+        DatadogIntegration.is_active == True,
+        DatadogHostCache.platform.isnot(None)
+    ).group_by(DatadogHostCache.platform).all()
+
+    # Integration summaries
+    integration_summaries = []
+    for integration in integrations:
+        host_count = DatadogHostCache.query.filter_by(
+            integration_id=integration.id
+        ).count()
+
+        up_count = DatadogHostCache.query.filter_by(
+            integration_id=integration.id,
+            up=True
+        ).count()
+
+        integration_summaries.append({
+            'id': integration.id,
+            'name': integration.name,
+            'host_count': host_count,
+            'hosts_up': up_count,
+            'hosts_down': host_count - up_count,
+            'last_sync': integration.last_sync.isoformat() if integration.last_sync else None,
+            'last_sync_status': integration.last_sync_status
+        })
+
+    return jsonify({
+        'generated_at': datetime.utcnow().isoformat(),
+        'total_hosts': total_hosts,
+        'hosts_up': hosts_up,
+        'hosts_down': total_hosts - hosts_up,
+        'cloud_providers': {provider: count for provider, count in cloud_counts if provider},
+        'platforms': {platform: count for platform, count in os_counts if platform},
+        'integrations': integration_summaries
+    })
+
+
+@api_bp.route('/datadog/hosts/search', methods=['GET'])
+@login_required
+def search_datadog_hosts():
+    """
+    Search Datadog hosts with advanced filtering.
+
+    Query parameters:
+    - q: General search query (searches name, tags, apps)
+    - os: Filter by OS (linux, windows, etc.)
+    - agent_version: Filter by agent version
+    - has_link: Filter by whether host is linked to Muse host (true/false)
+    """
+    from app.models import DatadogHostCache, DatadogIntegration
+
+    query = DatadogHostCache.query.join(
+        DatadogIntegration
+    ).filter(DatadogIntegration.is_active == True)
+
+    # General search
+    q = request.args.get('q')
+    if q:
+        search_term = f'%{q}%'
+        query = query.filter(
+            db.or_(
+                DatadogHostCache.host_name.ilike(search_term),
+                DatadogHostCache.tags.ilike(search_term),
+                DatadogHostCache.apps.ilike(search_term),
+                DatadogHostCache.aliases.ilike(search_term)
+            )
+        )
+
+    # OS filter
+    os_filter = request.args.get('os')
+    if os_filter:
+        query = query.filter(
+            db.or_(
+                DatadogHostCache.os_name.ilike(f'%{os_filter}%'),
+                DatadogHostCache.platform.ilike(f'%{os_filter}%')
+            )
+        )
+
+    # Agent version filter
+    agent_version = request.args.get('agent_version')
+    if agent_version:
+        query = query.filter(DatadogHostCache.agent_version.ilike(f'%{agent_version}%'))
+
+    # Linked to Muse host filter
+    has_link = request.args.get('has_link')
+    if has_link is not None:
+        if has_link.lower() in ('true', '1', 'yes'):
+            query = query.filter(DatadogHostCache.muse_host_id.isnot(None))
+        else:
+            query = query.filter(DatadogHostCache.muse_host_id.is_(None))
+
+    # Pagination
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 200)
+
+    total = query.count()
+    hosts = query.order_by(DatadogHostCache.host_name).offset(
+        (page - 1) * per_page
+    ).limit(per_page).all()
+
+    return jsonify({
+        'hosts': [h.to_dict() for h in hosts],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'query': {
+            'q': q,
+            'os': os_filter,
+            'agent_version': agent_version,
+            'has_link': has_link
+        }
+    })

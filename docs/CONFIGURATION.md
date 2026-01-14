@@ -39,7 +39,7 @@ CLAMAV_PORT=3310
 web:
   build: .
   ports:
-    - "5000:5000"           # Change left number for different host port
+    - "5050:5050"           # Change left number for different host port
   environment:
     - SECRET_KEY=${SECRET_KEY}
     - DATABASE_URL=postgresql://muse:muse@db:5432/muse
@@ -177,7 +177,7 @@ clamav:
 
 | Service | Port | Direction | Purpose |
 |---------|------|-----------|---------|
-| Muse Web | 5000 | Inbound | Web interface |
+| Muse Web | 5050 | Inbound | Web interface |
 | PostgreSQL | 5432 | Internal | Database |
 | ClamAV | 3310 | Internal | Virus scanning |
 
@@ -193,7 +193,7 @@ clamav:
 
 ```bash
 # Allow web access
-iptables -A INPUT -p tcp --dport 5000 -j ACCEPT
+iptables -A INPUT -p tcp --dport 5050 -j ACCEPT
 
 # Allow outbound SSH
 iptables -A OUTPUT -p tcp --dport 22 -j ACCEPT
@@ -211,7 +211,7 @@ iptables -A OUTPUT -p tcp --dport 5985 -j ACCEPT
 ```yaml
 # docker-compose.yml
 web:
-  command: gunicorn --bind 0.0.0.0:5000 --workers 4 --threads 2 run:app
+  command: gunicorn --bind 0.0.0.0:5050 --workers 4 --threads 2 run:app
 ```
 
 | Setting | Recommendation |
